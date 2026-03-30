@@ -1,0 +1,33 @@
+{
+  "name": "Super-Landlord",
+  "description": "Property management assistant: scan utility bills, generate debit notes, track tenants and properties, and hand properties off to Minpaku for short-term rental availability.",
+  "version": "1.0.0",
+  "context_files": ["properties", "tenants", "utilities", "debit_notes", "minpaku_handoffs"],
+  "category_map": {
+    "properties": "properties.md",
+    "tenants": "tenants.md",
+    "utilities": "utilities.md",
+    "debit_notes": "debit_notes.md",
+    "minpaku_handoffs": "minpaku_handoffs.md",
+    "general": "properties.md"
+  },
+  "intake_sources": {
+    "business-info.md": {"category": "properties",  "description": "Property portfolio overview"},
+    "personal-info.md": {"category": "tenants",     "description": "Tenant management preferences"},
+    "current-data.md":  {"category": "utilities",   "description": "Current utility rates and accounts"}
+  },
+  "starter_prompts": {
+    "operator": [
+      "Generate a debit note for Unit A for its share of the latest utility bill.",
+      "Mark 12 Harbour View Road, Unit A & B available for Minpaku.",
+      "What committed property and tenant facts do we have for Harbour View Road?",
+      "What do we need to hand this property off to Minpaku?"
+    ]
+  },
+  "extensions": ["super-landlord"],
+  "roles": {
+    "operator": {
+      "context_filter": ["properties", "tenants", "utilities", "debit_notes", "minpaku_handoffs"]
+    }
+  }
+}

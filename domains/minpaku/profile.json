@@ -1,0 +1,69 @@
+{
+  "name": "Minpaku",
+  "description": "Short-term rental management assistant with live booking data via Minpaku API.",
+  "version": "1.0.0",
+  "context_files": ["properties", "operations", "pricing", "contacts", "listing_publications"],
+  "category_map": {
+    "properties": "properties.md",
+    "operations": "operations.md",
+    "pricing": "pricing.md",
+    "contacts": "contacts.md",
+    "listing_publications": "listing_publications.md",
+    "general": "properties.md"
+  },
+  "intake_sources": {
+    "business-info.md": {"category": "properties",  "description": "Property portfolio and house rules"},
+    "personal-info.md": {"category": "operations",  "description": "Operational preferences and SOPs"},
+    "current-data.md":  {"category": "pricing",     "description": "Current pricing and revenue targets"}
+  },
+  "capture_roles": ["operator", "host", "housekeeping", "maintenance", "finance"],
+  "extensions": ["minpaku"],
+  "starter_prompts": {
+    "operator": [
+      "Show all properties.",
+      "Show all listings.",
+      "Prepare a listing draft for Unit B.",
+      "Publish the latest approved listing.",
+      "Show bookings needing payment confirmation."
+    ],
+    "host": [
+      "Show all properties.",
+      "Show all listings.",
+      "Prepare a listing draft for Unit B.",
+      "Publish the latest approved listing.",
+      "Show bookings needing payment confirmation."
+    ]
+  },
+  "roles": {
+    "operator": {
+      "agent_md": "roles/operator/AGENT.md",
+      "context_filter": ["properties", "operations", "pricing", "contacts"],
+      "telegram_bot_env": "MINPAKU_OPERATOR_BOT_TOKEN"
+    },
+    "host": {
+      "agent_md": "roles/operator/AGENT.md",
+      "context_filter": ["properties", "operations", "pricing", "contacts"],
+      "telegram_bot_env": "MINPAKU_HOST_BOT_TOKEN"
+    },
+    "guest": {
+      "agent_md": "roles/guest/AGENT.md",
+      "context_filter": ["properties"],
+      "telegram_bot_env": "MINPAKU_GUEST_BOT_TOKEN"
+    },
+    "housekeeping": {
+      "agent_md": "roles/housekeeping/AGENT.md",
+      "context_filter": ["properties", "operations"],
+      "telegram_bot_env": "MINPAKU_HOUSEKEEPING_BOT_TOKEN"
+    },
+    "maintenance": {
+      "agent_md": "roles/maintenance/AGENT.md",
+      "context_filter": ["properties", "contacts"],
+      "telegram_bot_env": "MINPAKU_MAINTENANCE_BOT_TOKEN"
+    },
+    "finance": {
+      "agent_md": "roles/finance/AGENT.md",
+      "context_filter": ["properties", "pricing", "contacts"],
+      "telegram_bot_env": "MINPAKU_FINANCE_BOT_TOKEN"
+    }
+  }
+}

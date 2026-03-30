@@ -1,0 +1,66 @@
+{
+  "name": "Decision Pack",
+  "description": "Multi-role underwriting workflow around a canonical Decision Pack shared by founder, investor, reviewer, attorney, and operator.",
+  "version": "0.1.0",
+  "context_files": ["company", "investor_lens", "evidence", "governance", "legal"],
+  "category_map": {
+    "company": "company.md",
+    "investor_lens": "investor_lens.md",
+    "evidence": "evidence.md",
+    "governance": "governance.md",
+    "legal": "legal.md",
+    "general": "company.md"
+  },
+  "intake_sources": {
+    "business-info.md": {"category": "company", "description": "Company narrative, ICP, product summary, and operating context"},
+    "strategy.md": {"category": "investor_lens", "description": "Target investor thesis, diligence priorities, and readiness thresholds"},
+    "current-data.md": {"category": "evidence", "description": "Current evidence, traction metrics, and receipts under review"},
+    "personal-info.md": {"category": "governance", "description": "Workflow preferences, reviewer policy norms, and operating roles"}
+  },
+  "extensions": ["decision_pack"],
+  "starter_prompts": {
+    "founder": [
+      "Create and assess a new FluxHalo submission.",
+      "Show me the current working state and the next best founder step.",
+      "Answer the top diligence blocker with these excerpts: ..."
+    ],
+    "investor": [
+      "Attach a diligence question asking why this will be defensible against fast followers.",
+      "Show me the current governed submission and the open diligence pressure."
+    ],
+    "reviewer": [
+      "Show me the current working state for reviewer action.",
+      "Hold the active material change for policy review."
+    ],
+    "attorney": [
+      "Show me the current submission and any legal or disclosure-sensitive changes.",
+      "Add a note that investor-facing materials must disclose the new pricing structure."
+    ],
+    "operator": [
+      "Show the operator overview for the governed state.",
+      "What is the next best surface and why?"
+    ]
+  },
+  "roles": {
+    "founder": {
+      "agent_md": "roles/founder/AGENT.md",
+      "context_filter": ["company", "investor_lens", "evidence", "governance", "legal"]
+    },
+    "investor": {
+      "agent_md": "roles/investor/AGENT.md",
+      "context_filter": ["company", "investor_lens", "evidence"]
+    },
+    "reviewer": {
+      "agent_md": "roles/reviewer/AGENT.md",
+      "context_filter": ["company", "investor_lens", "evidence", "governance", "legal"]
+    },
+    "attorney": {
+      "agent_md": "roles/attorney/AGENT.md",
+      "context_filter": ["company", "evidence", "governance", "legal"]
+    },
+    "operator": {
+      "agent_md": "roles/operator/AGENT.md",
+      "context_filter": ["company", "investor_lens", "evidence", "governance", "legal"]
+    }
+  }
+}

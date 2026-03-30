@@ -1,0 +1,17 @@
+# Local secrets and overrides
+**/.env
+
+# Runtime state
+staging/
+**/staging/
+**/data/sessions/
+**/data/telegram_uploads/
+
+# Python cache and temp files
+**/__pycache__/
+**/*.py[cod]
+**/*.tmp
+.pytest_cache/
+
+# macOS / editor noise
+.DS_Store

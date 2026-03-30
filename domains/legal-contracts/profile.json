@@ -1,0 +1,68 @@
+{
+  "name": "Legal Contracts",
+  "description": "Contract drafting, review, and compliance agent for a manufacturing company's legal department.",
+  "version": "1.0.0",
+  "context_files": ["contracts", "clause_library", "counterparties", "compliance", "products"],
+  "category_map": {
+    "contracts": "contracts.md",
+    "clause_library": "clause_library.md",
+    "counterparties": "counterparties.md",
+    "compliance": "compliance.md",
+    "products": "products.md",
+    "general": "contracts.md"
+  },
+  "intake_sources": {
+    "business-info.md": {"category": "products",    "description": "Product portfolio, hardware specs, software architecture"},
+    "personal-info.md": {"category": "compliance",  "description": "Role and regulatory obligations the user manages"},
+    "strategy.md":      {"category": "compliance",  "description": "Patent strategy and IP protection priorities"},
+    "current-data.md":  {"category": "contracts",   "description": "Active contracts, pipeline, pending deals"}
+  },
+  "extensions": [],
+  "starter_prompts": {
+    "operator": [
+      "Review Contract-PDF-Samples/contract1_hardware_supplier_agreement.md for high-risk clauses.",
+      "Review Contract-PDF-Samples/contract2_ip_licensing_agreement.md for IP ownership and field-of-use risks.",
+      "Summarize the approved clause patterns we should reuse for supplier agreements.",
+      "What compliance risks should I check before sending contract7_care_facility_master_services_agreement.md?"
+    ],
+    "counsel": [
+      "Review Contract-PDF-Samples/contract1_hardware_supplier_agreement.md for high-risk clauses.",
+      "Draft safer replacement language for any high-risk IP ownership or liability clause you find.",
+      "Check Contract-PDF-Samples/contract5_data_processing_agreement.md against our compliance requirements."
+    ],
+    "reviewer": [
+      "Review Contract-PDF-Samples/contract8_apac_distribution_agreement.md and list the top legal risks first.",
+      "Check whether contract3_customer_terms_of_service.md accurately reflects our privacy safeguards."
+    ],
+    "compliance": [
+      "Check Contract-PDF-Samples/contract5_data_processing_agreement.md against GDPR and HIPAA obligations.",
+      "What standing compliance flags should we enforce in supplier and customer agreements?"
+    ],
+    "business": [
+      "Summarize the negotiation risks in contract8_apac_distribution_agreement.md in plain English.",
+      "Explain the top issues in contract7_care_facility_master_services_agreement.md for a non-lawyer."
+    ]
+  },
+  "roles": {
+    "operator": {
+      "agent_md": "roles/operator/AGENT.md",
+      "context_filter": ["contracts", "clause_library", "counterparties", "compliance", "products"]
+    },
+    "counsel": {
+      "agent_md": "roles/counsel/AGENT.md",
+      "context_filter": ["contracts", "clause_library", "counterparties", "compliance", "products"]
+    },
+    "reviewer": {
+      "agent_md": "roles/reviewer/AGENT.md",
+      "context_filter": ["contracts", "clause_library", "counterparties", "compliance", "products"]
+    },
+    "compliance": {
+      "agent_md": "roles/compliance/AGENT.md",
+      "context_filter": ["contracts", "compliance", "products"]
+    },
+    "business": {
+      "agent_md": "roles/business/AGENT.md",
+      "context_filter": ["contracts", "counterparties", "products"]
+    }
+  }
+}
