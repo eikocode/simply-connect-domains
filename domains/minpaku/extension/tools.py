@@ -132,6 +132,199 @@ def _extract_bookings(bookings_payload: Any) -> list[dict[str, Any]]:
     return []
 
 
+def _normalize_entity_ref(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def _resolve_unique_property_match(properties: list[dict[str, Any]], query: str) -> dict[str, Any] | None:
+    if not properties:
+        return None
+
+    normalized_query = _normalize_entity_ref(query)
+    if not normalized_query:
+        return None
+
+    exact = []
+    partial = []
+    for prop in properties:
+        property_id = str(prop.get("id") or prop.get("property_id") or "").strip()
+        title = str(prop.get("title") or prop.get("name") or "").strip()
+        candidates = [value for value in (property_id, title) if value]
+        normalized_candidates = [_normalize_entity_ref(value) for value in candidates]
+        if normalized_query in normalized_candidates:
+            exact.append(prop)
+            continue
+        if any(normalized_query in candidate or candidate in normalized_query for candidate in normalized_candidates):
+            partial.append(prop)
+
+    exact = list(dict.fromkeys(id(prop) for prop in exact))
+    if len(exact) == 1:
+        target_id = exact[0]
+        for prop in properties:
+            if id(prop) == target_id:
+                return prop
+    if len(exact) > 1:
+        return None
+
+    partial = list(dict.fromkeys(id(prop) for prop in partial))
+    if len(partial) == 1:
+        target_id = partial[0]
+        for prop in properties:
+            if id(prop) == target_id:
+                return prop
+    return None
+
+
+def _find_property_for_query(client: MinpakuClient, query: str) -> tuple[dict[str, Any] | None, bool]:
+    matches = client.search_properties(query)
+    if matches:
+        resolved = _resolve_unique_property_match(matches, query)
+        if resolved is None:
+            return None, True
+        return resolved, True
+    properties = client.list_properties()
+    return _resolve_unique_property_match(properties, query), False
+
+
+def _search_property_matches(client: MinpakuClient, query: str) -> tuple[list[dict[str, Any]], bool]:
+    matches = client.search_properties(query)
+    if matches:
+        return matches, True
+    return client.list_properties(), False
+
+
+def _parse_price_update_request(text: str) -> dict[str, Any] | None:
+    match = re.search(
+        r"^(?:update|change|set)\s+(?P<target>.+?)\s+(?:to|at)\s+(?P<price>(?:[$€£¥]\s*)?\d+(?:\.\d+)?)\s*(?P<currency>[A-Za-z]{3})?\s*/?\s*(?:per\s*)?night\b",
+        text.strip(),
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    price_token = match.group("price").replace(" ", "")
+    numeric = re.sub(r"^[^0-9]+", "", price_token)
+    if not numeric:
+        return None
+    return {
+        "target": match.group("target").strip(" `."),
+        "nightly_price": float(numeric),
+        "currency_hint": (match.group("currency") or "").upper() or None,
+        "symbol": price_token[0] if price_token and not price_token[0].isdigit() else None,
+    }
+
+
+def _parse_property_edit_request(text: str) -> dict[str, Any] | None:
+    stripped = text.strip()
+    patterns: list[tuple[str, str]] = [
+        ("maxGuests", r"^(?:update|change|set)\s+(?P<target>.+?)\s+(?:to have|to|at)\s+(?P<value>\d+)\s+(?:guests?|people)\b"),
+        ("rules", r"^(?:update|change|set)\s+(?P<target>.+?)\s+(?:rules?|house rules?)\s+to\s+(?P<value>.+)$"),
+        ("description", r"^(?:update|change|set)\s+(?P<target>.+?)\s+description\s+to\s+(?P<value>.+)$"),
+        ("title", r"^(?:rename|retitle|change title of|set title of)\s+(?P<target>.+?)\s+to\s+(?P<value>.+)$"),
+    ]
+    for field, pattern in patterns:
+        match = re.search(pattern, stripped, flags=re.IGNORECASE)
+        if not match:
+            continue
+        value = match.group("value").strip(" `.")
+        if not value:
+            return None
+        return {
+            "field": field,
+            "target": match.group("target").strip(" `."),
+            "value": int(value) if field == "maxGuests" else value,
+        }
+    return None
+
+
+def _build_property_update_payload(prop: dict[str, Any], nightly_price: float, currency: str) -> dict[str, Any]:
+    location = prop.get("location") or {}
+    coordinates = location.get("coordinates") if isinstance(location, dict) else {}
+    return {
+        "title": str(prop.get("title") or prop.get("name") or "").strip(),
+        "description": prop.get("description"),
+        "city": str(location.get("city") or "") if isinstance(location, dict) else "",
+        "country": str(location.get("country") or "") if isinstance(location, dict) else "",
+        "latitude": coordinates.get("latitude") if isinstance(coordinates, dict) else None,
+        "longitude": coordinates.get("longitude") if isinstance(coordinates, dict) else None,
+        "nightlyPrice": nightly_price,
+        "currency": currency,
+        "amenities": prop.get("amenities") or [],
+        "maxGuests": prop.get("maxGuests") or prop.get("capacity") or 1,
+        "rules": prop.get("rules"),
+        "hostId": prop.get("hostId") or prop.get("host_id"),
+        "photos": prop.get("photos") or [],
+    }
+
+
+def _build_property_update_payload_from_changes(prop: dict[str, Any], changes: dict[str, Any]) -> dict[str, Any]:
+    location = prop.get("location") or {}
+    coordinates = location.get("coordinates") if isinstance(location, dict) else {}
+    return {
+        "title": str(changes.get("title", prop.get("title") or prop.get("name") or "")).strip(),
+        "description": changes.get("description", prop.get("description")),
+        "city": str(location.get("city") or "") if isinstance(location, dict) else "",
+        "country": str(location.get("country") or "") if isinstance(location, dict) else "",
+        "latitude": coordinates.get("latitude") if isinstance(coordinates, dict) else None,
+        "longitude": coordinates.get("longitude") if isinstance(coordinates, dict) else None,
+        "nightlyPrice": changes.get("nightlyPrice", prop.get("nightlyPrice") or prop.get("price") or 0),
+        "currency": changes.get("currency", prop.get("currency") or "HKD"),
+        "amenities": prop.get("amenities") or [],
+        "maxGuests": changes.get("maxGuests", prop.get("maxGuests") or prop.get("capacity") or 1),
+        "rules": changes.get("rules", prop.get("rules")),
+        "hostId": prop.get("hostId") or prop.get("host_id"),
+        "photos": prop.get("photos") or [],
+    }
+
+
+def _stage_price_update_note(cm, prop: dict[str, Any], nightly_price: float, currency: str) -> str:
+    title = str(prop.get("title") or prop.get("name") or prop.get("id") or "Unknown property")
+    property_id = str(prop.get("id") or prop.get("property_id") or "").strip()
+    content = "\n".join(
+        [
+            f"## Price Update — {title}",
+            f"- Property ID: `{property_id}`",
+            f"- New nightly price: `{currency} {nightly_price:.0f}/night`",
+            f"- Updated at: `{datetime.now(timezone.utc).isoformat()}`",
+        ]
+    )
+    return cm.create_staging_entry(
+        summary=f"Price update for {title}",
+        content=content,
+        category="pricing",
+        source="operator",
+    )
+
+
+def _stage_property_edit_note(cm, prop: dict[str, Any], field_label: str, value: Any) -> str:
+    title = str(prop.get("title") or prop.get("name") or prop.get("id") or "Unknown property")
+    property_id = str(prop.get("id") or prop.get("property_id") or "").strip()
+    content = "\n".join(
+        [
+            f"## Property Update — {title}",
+            f"- Property ID: `{property_id}`",
+            f"- Field updated: `{field_label}`",
+            f"- New value: `{value}`",
+            f"- Updated at: `{datetime.now(timezone.utc).isoformat()}`",
+        ]
+    )
+    return cm.create_staging_entry(
+        summary=f"{field_label} update for {title}",
+        content=content,
+        category="properties",
+        source="operator",
+    )
+
+
+def _safe_active_listing_note(client: MinpakuClient, property_id: str, target: str) -> str:
+    try:
+        live_listings = _flatten_listing_rows(client.list_listings(property_id=property_id, status="active"))
+    except Exception as exc:
+        return f"- Note: live listing check was unavailable after the property update ({exc})."
+    if live_listings:
+        return f"- Active listing count touched: `{len(live_listings)}`"
+    return f"- Note: there are currently no active listings found for “{target}”, so no listing-level price was directly changed yet."
+
+
 def _stage_property_removal(cm, prop: dict[str, Any], active_booking_count: int) -> str:
     city, country = _extract_location(prop)
     title = str(prop.get("title") or prop.get("name") or prop.get("id") or "Unknown property")
@@ -307,6 +500,65 @@ def maybe_handle_message(message: str, cm, role_name: str = "operator") -> str |
     if config_error:
         return None
 
+    price_update = _parse_price_update_request(text)
+    if price_update:
+        try:
+            client = MinpakuClient()
+            prop, found_via_search = _find_property_for_query(client, price_update["target"])
+            if prop is None:
+                return f"I couldn't find a Minpaku property matching '{price_update['target']}'."
+            property_id = str(prop.get("id") or prop.get("property_id") or "").strip()
+            currency = (
+                price_update["currency_hint"]
+                or str(prop.get("currency") or "HKD")
+            )
+            update_payload = _build_property_update_payload(prop, price_update["nightly_price"], currency)
+            client.update_property(property_id, update_payload)
+            stage_id = _stage_price_update_note(cm, prop, price_update["nightly_price"], currency)
+            note = _safe_active_listing_note(client, property_id, price_update["target"])
+            title = str(prop.get("title") or prop.get("name") or property_id)
+            return "\n".join(
+                [
+                    f"Done — I updated the live property price for `{title}` to `{currency} {price_update['nightly_price']:.0f}/night`.",
+                    "",
+                    f"- Property matched: `{title}` (`{property_id}`)",
+                    f"- Match source: `{'search' if found_via_search else 'inventory fallback'}`",
+                    f"- Staged update ID: `{stage_id}`",
+                    note,
+                ]
+            )
+        except Exception as exc:
+            return f"I found the Minpaku property, but the live property price update failed: {exc}"
+
+    property_edit = _parse_property_edit_request(text)
+    if property_edit:
+        try:
+            client = MinpakuClient()
+            prop, found_via_search = _find_property_for_query(client, property_edit["target"])
+            if prop is None:
+                return f"I couldn't find a Minpaku property matching '{property_edit['target']}'."
+            property_id = str(prop.get("id") or prop.get("property_id") or "").strip()
+            field = property_edit["field"]
+            value = property_edit["value"]
+            changes: dict[str, Any] = {field: value}
+            payload = _build_property_update_payload_from_changes(prop, changes)
+            client.update_property(property_id, payload)
+            stage_id = _stage_property_edit_note(cm, prop, field, value)
+            title = str(prop.get("title") or prop.get("name") or property_id)
+            return "\n".join(
+                [
+                    f"Done — I updated the live property `{title}`.",
+                    "",
+                    f"- Property matched: `{title}` (`{property_id}`)",
+                    f"- Match source: `{'search' if found_via_search else 'inventory fallback'}`",
+                    f"- Field changed: `{field}`",
+                    f"- New value: `{value}`",
+                    f"- Staged update ID: `{stage_id}`",
+                ]
+            )
+        except Exception as exc:
+            return f"I found the Minpaku property, but the live property update failed: {exc}"
+
     if (
         "show bookings needing payment confirmation" in lowered
         or "show bookings awaiting payment confirmation" in lowered
@@ -425,15 +677,18 @@ def maybe_handle_message(message: str, cm, role_name: str = "operator") -> str |
             return None
 
     if "publish" in lowered and "listing" in lowered:
-        approved = [
-            entry for entry in cm.list_staging()
-            if entry.get("category") == "listing_publications" and entry.get("status") == "approved"
-        ]
+        approved = _approved_listing_entries(cm)
         unconfirmed = [
             entry for entry in cm.list_staging()
             if entry.get("category") == "listing_publications" and entry.get("status") == "unconfirmed"
         ]
         if approved:
+            target_query = _extract_listing_action_target(text, lowered, "publish")
+            if target_query:
+                target = _resolve_approved_target_by_query(cm, target_query)
+                if target is None:
+                    return None
+                return _format_listing_action_result("publish", publish_minpaku_listing(cm, target["id"]))
             latest = approved[-1]
             return _format_listing_action_result("publish", publish_minpaku_listing(cm, latest["id"]))
         if unconfirmed:
@@ -449,11 +704,14 @@ def maybe_handle_message(message: str, cm, role_name: str = "operator") -> str |
         )
 
     if "update" in lowered and "listing" in lowered:
-        approved = [
-            entry for entry in cm.list_staging()
-            if entry.get("category") == "listing_publications" and entry.get("status") == "approved"
-        ]
+        approved = _approved_listing_entries(cm)
         if approved:
+            target_query = _extract_listing_action_target(text, lowered, "update")
+            if target_query:
+                target = _resolve_approved_target_by_query(cm, target_query)
+                if target is None:
+                    return None
+                return _format_listing_action_result("update", update_minpaku_listing(cm, target["id"]))
             latest = approved[-1]
             return _format_listing_action_result("update", update_minpaku_listing(cm, latest["id"]))
         return (
@@ -462,11 +720,14 @@ def maybe_handle_message(message: str, cm, role_name: str = "operator") -> str |
         )
 
     if ("unlist" in lowered or ("remove" in lowered and "listing" in lowered) or ("delete" in lowered and "listing" in lowered)) and "property" not in lowered:
-        approved = [
-            entry for entry in cm.list_staging()
-            if entry.get("category") == "listing_publications" and entry.get("status") == "approved"
-        ]
+        approved = _approved_listing_entries(cm)
         if approved:
+            target_query = _extract_listing_action_target(text, lowered, "unlist")
+            if target_query:
+                target = _resolve_approved_target_by_query(cm, target_query)
+                if target is None:
+                    return None
+                return _format_listing_action_result("unlist", delete_minpaku_listing(cm, target["id"]))
             latest = approved[-1]
             return _format_listing_action_result("unlist", delete_minpaku_listing(cm, latest["id"]))
         return (
@@ -508,10 +769,12 @@ def maybe_handle_message(message: str, cm, role_name: str = "operator") -> str |
     query = re.sub(r"^(remove|delete)\s+", "", text, flags=re.IGNORECASE).strip(" .")
     try:
         client = MinpakuClient()
-        properties = client.search_properties(query)
+        properties, _found_via_search = _search_property_matches(client, query)
         if not properties:
             return f"I couldn't find a Minpaku property matching '{query}'."
-        prop = properties[0]
+        prop = _resolve_unique_property_match(properties, query)
+        if prop is None:
+            return None
         property_id = str(prop.get("id") or prop.get("property_id") or "").strip()
         bookings_payload = client.get_bookings_by_property(property_id)
         active_booking_count = _count_active_or_upcoming_bookings(bookings_payload)
@@ -712,11 +975,69 @@ def _extract_listing_payload(content: str) -> dict[str, Any]:
     return json.loads(match.group(1))
 
 
-def _resolve_approved_target(cm, entry_id: str | None = None) -> tuple[dict[str, Any] | None, list[dict[str, str]]]:
-    approved_entries = [
+def _approved_listing_entries(cm) -> list[dict[str, Any]]:
+    return [
         entry for entry in cm.list_staging()
         if entry.get("category") == "listing_publications" and entry.get("status") == "approved"
     ]
+
+
+def _normalize_listing_ref(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def _resolve_approved_target_by_query(cm, query: str) -> dict[str, Any] | None:
+    approved_entries = _approved_listing_entries(cm)
+    if not approved_entries:
+        return None
+    normalized_query = _normalize_listing_ref(query)
+    if not normalized_query:
+        return None
+
+    exact_matches: list[dict[str, Any]] = []
+    partial_matches: list[dict[str, Any]] = []
+
+    for entry in approved_entries:
+        payload = _extract_listing_payload(entry["content"])
+        candidates = [
+            str(entry.get("id") or ""),
+            str(payload.get("title") or ""),
+            str(payload.get("propertyId") or ""),
+            str(payload.get("source_property_ref") or ""),
+            str(entry.get("summary") or ""),
+        ]
+        normalized_candidates = [_normalize_listing_ref(candidate) for candidate in candidates if candidate]
+        if normalized_query in normalized_candidates:
+            exact_matches.append(entry)
+            continue
+        if any(normalized_query in candidate or candidate in normalized_query for candidate in normalized_candidates):
+            partial_matches.append(entry)
+
+    if len(exact_matches) == 1:
+        return exact_matches[0]
+    if len(exact_matches) > 1:
+        return None
+    if len(partial_matches) == 1:
+        return partial_matches[0]
+    return None
+
+
+def _extract_listing_action_target(text: str, lowered: str, action: str) -> str | None:
+    if "latest approved listing" in lowered:
+        return None
+    patterns = {
+        "publish": r"\bpublish\b\s+(?:the\s+)?(?:approved\s+)?listing(?:\s+draft)?(?:\s+for)?\s+(?P<target>.+)$",
+        "update": r"\bupdate\b\s+(?:the\s+)?(?:approved\s+)?listing(?:\s+draft)?(?:\s+for)?\s+(?P<target>.+)$",
+        "unlist": r"\b(?:unlist|remove|delete)\b\s+(?:the\s+)?(?:approved\s+)?listing(?:\s+draft)?(?:\s+for)?\s+(?P<target>.+)$",
+    }
+    match = re.search(patterns[action], text, re.IGNORECASE)
+    if not match:
+        return None
+    return match.group("target").strip(" `.?")
+
+
+def _resolve_approved_target(cm, entry_id: str | None = None) -> tuple[dict[str, Any] | None, list[dict[str, str]]]:
+    approved_entries = _approved_listing_entries(cm)
     available_entries = [{"id": entry["id"], "summary": entry.get("summary", "")} for entry in approved_entries]
     if not approved_entries:
         return None, available_entries

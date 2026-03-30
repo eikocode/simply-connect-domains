@@ -74,6 +74,453 @@ def _extract_property_details(properties_markdown: str, source_property_ref: str
     return None
 
 
+def _iter_property_sections(markdown: str) -> list[str]:
+    parts = re.split(r"(?=^##\s+)", markdown, flags=re.MULTILINE)
+    return [part.strip() for part in parts if part.strip().startswith("## ")]
+
+
+def _rewrite_committed_properties(cm, new_sections: list[str]) -> None:
+    target_path = cm._root / "context" / "properties.md"
+    body = "# Properties"
+    if new_sections:
+        body += "\n\n" + "\n\n".join(section.strip() for section in new_sections)
+    body += "\n"
+    target_path.write_text(body, encoding="utf-8")
+
+
+def _normalize_property_ref(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def _list_property_titles(cm) -> list[str]:
+    titles = []
+    for section in _iter_property_sections(cm.load_committed().get("properties", "")):
+        if _parse_property_removal_request(section).get("is_removal") == "yes":
+            continue
+        titles.append(section.splitlines()[0].replace("##", "").strip())
+    return titles
+
+
+def _resolve_property_reference(cm, raw_ref: str) -> dict[str, str | list[str] | None]:
+    query = raw_ref.strip()
+    if not query:
+        return {"status": "none", "resolved": None, "matches": []}
+
+    titles = _list_property_titles(cm)
+    normalized_query = _normalize_property_ref(query)
+
+    exact_matches = [title for title in titles if _normalize_property_ref(title) == normalized_query]
+    if len(exact_matches) == 1:
+        return {"status": "exact", "resolved": exact_matches[0], "matches": exact_matches}
+    if len(exact_matches) > 1:
+        return {"status": "ambiguous", "resolved": None, "matches": exact_matches}
+
+    partial_matches = []
+    for title in titles:
+        normalized_title = _normalize_property_ref(title)
+        if normalized_query and (normalized_query in normalized_title or normalized_title.startswith(normalized_query)):
+            partial_matches.append(title)
+
+    unique_partial_matches = list(dict.fromkeys(partial_matches))
+    if len(unique_partial_matches) == 1:
+        return {"status": "unique_partial", "resolved": unique_partial_matches[0], "matches": unique_partial_matches}
+    if len(unique_partial_matches) > 1:
+        return {"status": "ambiguous", "resolved": None, "matches": unique_partial_matches}
+    return {"status": "none", "resolved": None, "matches": []}
+
+
+def _extract_property_field(section: str, label: str) -> str | None:
+    match = re.search(rf"^- {re.escape(label)}:\s*(.+)$", section, re.MULTILINE)
+    return match.group(1).strip() if match else None
+
+
+def _parse_property_candidate_blob(blob: str) -> dict[str, str] | None:
+    full_address = None
+    unit = None
+    building = None
+
+    full_match = re.search(r"(?:Full service address|Service address|Address):\s*`?(.+?)`?$", blob, re.MULTILINE)
+    if full_match:
+        full_address = full_match.group(1).strip()
+
+    unit_match = re.search(r"(?:Unit):\s*`?(.+?)`?$", blob, re.MULTILINE)
+    if unit_match:
+        unit = unit_match.group(1).strip()
+
+    building_match = re.search(r"(?:Building):\s*`?(.+?)`?$", blob, re.MULTILINE)
+    if building_match:
+        building = building_match.group(1).strip()
+
+    if not full_address:
+        summary_match = re.search(r"bill\s*\((.+?)\)", blob, re.IGNORECASE)
+        if summary_match:
+            full_address = summary_match.group(1).strip()
+        else:
+            summary_match = re.search(r"\bfor\s+(.+?)(?:\s+-\s+|, billing period|$)", blob, re.IGNORECASE)
+            if summary_match:
+                full_address = summary_match.group(1).strip()
+
+    if not unit and full_address:
+        unit_building_match = re.match(r"^(Flat[^,]*,\s*[^,]*?(?:,\s*Tower\s*\d+)?)(?:,\s*(.+))?$", full_address, re.IGNORECASE)
+        if unit_building_match:
+            unit = unit_building_match.group(1).strip()
+            if unit_building_match.group(2):
+                building = unit_building_match.group(2).split(",")[0].strip()
+        else:
+            unit_building_match = re.match(r"^(Flat\s+.+?Tower\s*\d+)\s+(.+)$", full_address, re.IGNORECASE)
+            if unit_building_match:
+                unit = unit_building_match.group(1).strip()
+                building = unit_building_match.group(2).split(",")[0].strip()
+
+    if not full_address and unit and building:
+        full_address = f"{unit}, {building}"
+
+    if not building and full_address:
+        comma_parts = [part.strip() for part in full_address.split(",") if part.strip()]
+        if len(comma_parts) >= 2:
+            building = comma_parts[min(2, len(comma_parts) - 1)]
+
+    if not full_address:
+        return None
+
+    property_ref = full_address
+    if unit and building:
+        property_ref = f"{unit}, {building}"
+    elif building:
+        property_ref = building
+
+    return {
+        "property_ref": property_ref,
+        "unit": unit or "(not parsed)",
+        "building": building or "(not parsed)",
+        "full_address": full_address,
+    }
+
+
+def _extract_property_candidate_from_history_or_staging(cm, history: list[dict] | None) -> dict[str, str] | None:
+    if history:
+        for turn in reversed(history):
+            if turn.get("role") != "assistant":
+                continue
+            blob = str(turn.get("content") or "")
+            if "Extracted property from the utility bill" in blob or "Extracted bill summary" in blob:
+                candidate = _parse_property_candidate_blob(blob)
+                if candidate:
+                    return candidate
+
+    for entry in reversed(cm.list_staging(status="unconfirmed")):
+        if entry.get("category") != "utilities":
+            continue
+        blob = f"{entry.get('summary', '')}\n{entry.get('content', '')}"
+        candidate = _parse_property_candidate_blob(blob)
+        if candidate:
+            return candidate
+    return None
+
+
+def _extract_property_candidate_from_entries(cm, entry_ids: list[str]) -> dict[str, str] | None:
+    for entry_id in reversed(entry_ids):
+        entry = cm.get_staging_entry(entry_id)
+        if not entry or entry.get("category") != "utilities":
+            continue
+        blob = f"{entry.get('summary', '')}\n{entry.get('content', '')}"
+        candidate = _parse_property_candidate_blob(blob)
+        if candidate:
+            return candidate
+    return None
+
+
+def _has_existing_property_candidate(cm, candidate: dict[str, str]) -> bool:
+    property_ref = candidate.get("property_ref", "").strip()
+    full_address = candidate.get("full_address", "").strip()
+    normalized_refs = {_normalize_property_ref(property_ref), _normalize_property_ref(full_address)}
+    normalized_refs.discard("")
+
+    for title in _list_property_titles(cm):
+        if _normalize_property_ref(title) in normalized_refs:
+            return True
+
+    for item in _find_pending_property_staging(cm):
+        if _normalize_property_ref(item.get("title", "")) in normalized_refs:
+            return True
+        if _normalize_property_ref(item.get("full_address", "")) in normalized_refs:
+            return True
+
+    return False
+
+
+def _stage_property_candidate(cm, candidate: dict[str, str]) -> dict[str, str]:
+    summary = f"Property record for {candidate['property_ref']}"
+    content = "\n".join(
+        [
+            f"## {candidate['property_ref']}",
+            "- Source: utility bill extraction",
+            f"- Unit: {candidate['unit']}",
+            f"- Building: {candidate['building']}",
+            f"- Full service address: {candidate['full_address']}",
+        ]
+    )
+    entry_id = cm.create_staging_entry(
+        summary=summary,
+        content=content,
+        category="properties",
+        source="operator",
+    )
+    return {"entry_id": entry_id, **candidate}
+
+
+def on_ingest_to_staging(cm, filepath, result: dict) -> dict | None:
+    entries = result.get("entries", [])
+    utility_entry_ids = [str(item.get("entry_id") or "") for item in entries if item.get("category") == "utilities"]
+    if not utility_entry_ids:
+        return None
+
+    candidate = _extract_property_candidate_from_entries(cm, utility_entry_ids)
+    if not candidate or _has_existing_property_candidate(cm, candidate):
+        return None
+
+    staged_property = _stage_property_candidate(cm, candidate)
+    property_entry = {
+        "entry_id": staged_property["entry_id"],
+        "summary": f"Property record for {staged_property['property_ref']}",
+        "category": "properties",
+    }
+    result.setdefault("entries", []).append(property_entry)
+    return {
+        "ok": True,
+        "message": (
+            f"Also staged a property candidate for {staged_property['property_ref']} from the utility bill."
+        ),
+        "property_ref": staged_property["property_ref"],
+        "entry_id": staged_property["entry_id"],
+    }
+
+
+def _find_pending_property_staging(cm) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for entry in cm.list_staging(status="unconfirmed"):
+        if entry.get("category") != "properties":
+            continue
+        content = entry.get("content", "")
+        if _parse_property_removal_request(content).get("is_removal") == "yes":
+            continue
+        title_match = re.search(r"^##\s+(.+)$", content, re.MULTILINE)
+        rows.append(
+            {
+                "entry_id": str(entry.get("id") or ""),
+                "title": title_match.group(1).strip() if title_match else entry.get("summary", "(pending property)"),
+                "unit": _extract_property_field(content, "Unit") or "(not parsed)",
+                "building": _extract_property_field(content, "Building") or "(not parsed)",
+                "full_address": _extract_property_field(content, "Full service address") or "(not parsed)",
+            }
+        )
+    return rows
+
+
+def _parse_property_removal_request(content: str) -> dict[str, str | None]:
+    heading = re.search(r"^##\s+Property Removal Request$", content, re.MULTILINE)
+    target = re.search(r"- Property:\s*`?(.+?)`?$", content, re.MULTILINE)
+    full_address = re.search(r"- Full service address:\s*`?(.+?)`?$", content, re.MULTILINE)
+    return {
+        "is_removal": "yes" if heading else None,
+        "property_ref": target.group(1).strip() if target else None,
+        "full_address": full_address.group(1).strip() if full_address else None,
+    }
+
+
+def _apply_approved_property_removal(cm, property_ref: str) -> bool:
+    properties_markdown = cm.load_committed().get("properties", "")
+    sections = _iter_property_sections(properties_markdown)
+    kept_sections: list[str] = []
+    changed = False
+    for section in sections:
+        title = section.splitlines()[0].replace("##", "").strip()
+        parsed_removal = _parse_property_removal_request(section)
+        if parsed_removal.get("is_removal") == "yes":
+            changed = True
+            continue
+        if _property_matches_removal_target(title, property_ref):
+            changed = True
+            continue
+        kept_sections.append(section)
+    if changed:
+        _rewrite_committed_properties(cm, kept_sections)
+    return changed
+
+
+def _find_pending_property_removals(cm) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for entry in cm.list_staging(status="unconfirmed"):
+        if entry.get("category") != "properties":
+            continue
+        parsed = _parse_property_removal_request(entry.get("content", ""))
+        if parsed.get("is_removal") != "yes" or not parsed.get("property_ref"):
+            continue
+        rows.append(
+            {
+                "entry_id": str(entry.get("id") or ""),
+                "property_ref": str(parsed.get("property_ref") or ""),
+                "full_address": str(parsed.get("full_address") or ""),
+            }
+        )
+    return rows
+
+
+def _find_matching_pending_property_removal(cm, raw_ref: str) -> dict[str, str] | None:
+    query = raw_ref.strip()
+    if not query:
+        return None
+
+    normalized_query = _normalize_property_ref(query)
+    exact: list[dict[str, str]] = []
+    partial: list[dict[str, str]] = []
+
+    for item in _find_pending_property_removals(cm):
+        target = item.get("property_ref", "")
+        normalized_target = _normalize_property_ref(target)
+        if not normalized_target:
+            continue
+        if normalized_target == normalized_query:
+            exact.append(item)
+            continue
+        if normalized_query and (
+            normalized_query in normalized_target or normalized_target.startswith(normalized_query)
+        ):
+            partial.append(item)
+
+    if len(exact) == 1:
+        return exact[0]
+    if len(exact) > 1:
+        return None
+    if len(partial) == 1:
+        return partial[0]
+    return None
+
+
+def _stage_property_removal(cm, property_ref: str) -> dict[str, str]:
+    content = "\n".join(
+        [
+            "## Property Removal Request",
+            "",
+            f"- Property: {property_ref}",
+            f"- Full service address: {property_ref}",
+            "",
+            "This property should be removed from the operator working set immediately.",
+            "Framework approval is still required before the committed property registry is updated.",
+        ]
+    )
+    entry_id = cm.create_staging_entry(
+        summary=f"Remove property {property_ref}",
+        content=content,
+        category="properties",
+        source="operator",
+    )
+    return {"entry_id": entry_id, "property_ref": property_ref}
+
+
+def _property_matches_removal_target(committed_title: str, removal_target: str) -> bool:
+    committed = committed_title.strip().lower()
+    target = removal_target.strip().lower()
+    return committed == target or committed.startswith(target + ",") or target in committed
+
+
+def _reply_all_properties(cm) -> str:
+    committed_sections = _iter_property_sections(cm.load_committed().get("properties", ""))
+    staged_properties = _find_pending_property_staging(cm)
+    staged_removals = _find_pending_property_removals(cm)
+
+    lines = []
+    visible_committed_sections = _visible_committed_property_titles(cm)
+    visible_committed_norms = {_normalize_property_ref(title) for title in visible_committed_sections}
+    active_staged_properties = [
+        item
+        for item in staged_properties
+        if _normalize_property_ref(item["title"]) not in visible_committed_norms
+    ]
+
+    if visible_committed_sections or active_staged_properties:
+        lines.append("Active properties in the operator working set:")
+        for title in visible_committed_sections:
+            lines.append(f"- `{title}`")
+        for item in active_staged_properties:
+            lines.append(f"- `{item['title']}` *(pending framework approval)*")
+    else:
+        if committed_sections and staged_removals:
+            lines.append("There are currently no active properties in the operator working set.")
+        else:
+            lines.append("There are currently no properties in committed context.")
+
+    if staged_properties:
+        lines.append("")
+        lines.append("Pending staged properties:")
+        for item in staged_properties:
+            lines.append(f"- `{item['title']}` — staging entry `{item['entry_id']}`")
+            lines.append(f"  Full service address: {item['full_address']}")
+        lines.append("")
+        lines.append("These staged property records are available to the operator as pending context and still need `sc-admin review` to become committed.")
+
+    if staged_removals:
+        lines.append("")
+        lines.append("Pending staged property removals:")
+        for item in staged_removals:
+            lines.append(f"- `{item['property_ref']}` — staging entry `{item['entry_id']}`")
+        lines.append("")
+        lines.append("These properties are hidden from the operator working set immediately, but framework approval via `sc-admin review` is still required before committed context is updated.")
+
+    return "\n".join(lines)
+
+
+def _visible_committed_property_titles(cm) -> list[str]:
+    committed_sections = _iter_property_sections(cm.load_committed().get("properties", ""))
+    staged_removals = _find_pending_property_removals(cm)
+    visible_titles: list[str] = []
+    for section in committed_sections:
+        if _parse_property_removal_request(section).get("is_removal") == "yes":
+            continue
+        title = section.splitlines()[0].replace("##", "").strip()
+        if not any(_property_matches_removal_target(title, item["property_ref"]) for item in staged_removals):
+            visible_titles.append(title)
+    return visible_titles
+
+
+def _reply_blocked_debit_note_for_removed_property(cm, target: str) -> str | None:
+    removal = _find_matching_pending_property_removal(cm, target)
+    if not removal:
+        return None
+    return "\n".join(
+        [
+            f"I can't generate a debit note for `{target}` right now because that property is hidden from the operator working set by a pending staged removal.",
+            "",
+            f"- Pending staged removal: `{removal['property_ref']}`",
+            f"- Staging entry ID: `{removal['entry_id']}`",
+            "",
+            "Next step: either approve/reject the removal in `sc-admin review`, or use an active property that is still in the working set.",
+        ]
+    )
+
+
+def _reply_blocked_debit_note_without_active_property(cm) -> str | None:
+    if _visible_committed_property_titles(cm):
+        return None
+    pending_removals = _find_pending_property_removals(cm)
+    if not pending_removals:
+        return None
+    lines = [
+        "I can't generate a debit note right now because there are no active properties in the operator working set.",
+        "",
+        "Pending staged property removals:",
+    ]
+    for item in pending_removals:
+        lines.append(f"- `{item['property_ref']}` — staging entry `{item['entry_id']}`")
+    lines.extend(
+        [
+            "",
+            "Next step: either approve/reject the removal in `sc-admin review`, or restore an active property before generating debit notes.",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def _determine_location(source_property_ref: str) -> tuple[str, str]:
     if "," in source_property_ref:
         parts = [part.strip() for part in source_property_ref.split(",") if part.strip()]
@@ -227,6 +674,194 @@ def _build_synced_handoff_block(source_property_ref: str, availability: str, rem
     return "\n".join(lines)
 
 
+def _iter_debit_note_sections(markdown: str) -> list[str]:
+    parts = re.split(r"(?=^##\s+DN-)", markdown, flags=re.MULTILINE)
+    return [part.strip() for part in parts if part.strip().startswith("## DN-")]
+
+
+def _extract_debit_note_field(section: str, label: str) -> str | None:
+    match = re.search(rf"^- {re.escape(label)}:\s*(.+)$", section, re.MULTILINE)
+    return match.group(1).strip() if match else None
+
+
+def _matches_debit_note_target(text: str, target: str) -> bool:
+    return target.lower() in text.lower()
+
+
+def _find_outstanding_committed_debit_notes(cm, target: str) -> list[dict[str, str]]:
+    markdown = cm.load_committed().get("debit_notes", "")
+    matches: list[dict[str, str]] = []
+    for section in _iter_debit_note_sections(markdown):
+        status = (_extract_debit_note_field(section, "Status") or "").lower()
+        if status not in {"unpaid", "outstanding", "pending"}:
+            continue
+        haystack = "\n".join(
+            filter(
+                None,
+                [
+                    section,
+                    _extract_debit_note_field(section, "Tenant"),
+                    _extract_debit_note_field(section, "Property"),
+                    _extract_debit_note_field(section, "Description"),
+                ],
+            )
+        )
+        if not _matches_debit_note_target(haystack, target):
+            continue
+        matches.append(
+            {
+                "reference": section.splitlines()[0].replace("##", "").strip(),
+                "tenant": _extract_debit_note_field(section, "Tenant") or "(unknown tenant)",
+                "amount": _extract_debit_note_field(section, "Amount") or "(unknown amount)",
+                "status": _extract_debit_note_field(section, "Status") or "Unpaid",
+            }
+        )
+    return matches
+
+
+def _find_pending_debit_note_staging(cm, target: str) -> list[dict[str, str]]:
+    matches: list[dict[str, str]] = []
+    for entry in cm.list_staging(status="unconfirmed"):
+        content = entry.get("content", "")
+        summary = entry.get("summary", "")
+        blob = f"{summary}\n{content}"
+        if "debit note" not in blob.lower() and "dn-" not in blob.lower():
+            continue
+        if not _matches_debit_note_target(blob, target):
+            continue
+        reference_match = re.search(r"\bDN-\d{4}-\d+\b", blob)
+        amount_match = re.search(r"\bHKD\s*[0-9,]+(?:\.\d{2})?\b", content)
+        matches.append(
+            {
+                "entry_id": str(entry.get("id") or ""),
+                "category": str(entry.get("category") or "general"),
+                "reference": reference_match.group(0) if reference_match else "(pending reference)",
+                "summary": summary or "Pending debit note update",
+                "amount": amount_match.group(0) if amount_match else "(amount not parsed)",
+            }
+        )
+    return matches
+
+
+def _reply_outstanding_debit_notes(cm, target: str) -> str | None:
+    committed_matches = _find_outstanding_committed_debit_notes(cm, target)
+    staged_matches = _find_pending_debit_note_staging(cm, target)
+
+    if not committed_matches and not staged_matches:
+        return None
+
+    lines = []
+    if committed_matches:
+        lines.append(f"Outstanding committed debit notes for {target}:")
+        for item in committed_matches:
+            lines.append(f"- `{item['reference']}` — {item['tenant']} — {item['amount']} — {item['status']}")
+    else:
+        lines.append(f"There are no committed outstanding debit notes for {target} yet.")
+
+    if staged_matches:
+        lines.append("")
+        lines.append(f"Pending staged debit-note updates for {target}:")
+        for item in staged_matches:
+            lines.append(
+                f"- `{item['reference']}` — {item['amount']} — category `{item['category']}` — staging entry `{item['entry_id']}`"
+            )
+        lines.append("")
+        lines.append("These staged debit-note updates still need framework approval via `sc-admin review`.")
+
+    return "\n".join(lines)
+
+
+def _increment_debit_note_reference(reference: str) -> str | None:
+    match = re.match(r"^(DN-\d{4}-)(\d+)$", reference.strip())
+    if not match:
+        return None
+    prefix, num = match.groups()
+    return f"{prefix}{int(num) + 1:03d}"
+
+
+def _extract_latest_debit_note_draft(history: list[dict] | None) -> dict[str, str] | None:
+    if not history:
+        return None
+    for turn in reversed(history):
+        if turn.get("role") != "assistant":
+            continue
+        content = str(turn.get("content") or "")
+        if "Debit Note Draft" in content:
+            reference = re.search(r"`Reference`:\s*`?([A-Z]{2}-\d{4}-\d+)`?", content)
+            issue_date = re.search(r"`Issue date`:\s*([0-9-]+)", content)
+            property_ref = re.search(r"`Property`:\s*(.+)", content)
+            billed_to = re.search(r"`Billed to`:\s*(.+)", content)
+            billing_period = re.search(r"`Billing period`:\s*(.+)", content)
+            utility = re.search(r"`Utility`:\s*([^\n`]+)", content)
+            amount_due = re.search(r"`Amount due from [^`]+`:\s*\*+\s*(HKD\s*[0-9,]+(?:\.\d{2})?)", content)
+            if all([reference, issue_date, property_ref, billed_to, billing_period, amount_due]):
+                return {
+                    "reference": reference.group(1).strip(),
+                    "issue_date": issue_date.group(1).strip(),
+                    "property": property_ref.group(1).strip(),
+                    "billed_to": billed_to.group(1).strip(),
+                    "billing_period": billing_period.group(1).strip(),
+                    "utility": utility.group(1).strip() if utility else "Utility",
+                    "amount_due": amount_due.group(1).strip(),
+                }
+
+        if "DEBIT NOTE" not in content:
+            continue
+        reference = re.search(r"Reference No\.\s*:\s*([A-Z]{2}-\d{4}-\d+)", content)
+        issue_date = re.search(r"Date:\s*([0-9-]+)", content)
+        property_ref = re.search(r"Property\s*/\s*Service Account:\s*\n([^\n]+)", content)
+        billed_to = re.search(r"To:\s*([^\n]+)", content)
+        billing_period = re.search(r"Billing Period:\s*([^\n]+)", content)
+        utility = re.search(r"Utility:\s*([^\n]+)", content)
+        amount_due = re.search(r"Amount Due:\s*\**\s*(HKD\s*[0-9,]+(?:\.\d{2})?)", content)
+        if not all([reference, issue_date, property_ref, billed_to, billing_period, amount_due]):
+            continue
+        return {
+            "reference": reference.group(1).strip(),
+            "issue_date": issue_date.group(1).strip(),
+            "property": property_ref.group(1).strip(),
+            "billed_to": billed_to.group(1).strip(),
+            "billing_period": billing_period.group(1).strip(),
+            "utility": utility.group(1).strip() if utility else "Utility",
+            "amount_due": amount_due.group(1).strip(),
+        }
+    return None
+
+
+def _stage_issued_debit_note_from_history(cm, history: list[dict] | None) -> dict | None:
+    draft = _extract_latest_debit_note_draft(history)
+    if not draft:
+        return None
+    next_reference = _increment_debit_note_reference(draft["reference"]) or draft["reference"]
+    summary = f"Issued debit note {draft['reference']} for {draft['billed_to']}, {draft['amount_due']}"
+    content = "\n".join(
+        [
+            f"## {draft['reference']}",
+            f"- Date: {draft['issue_date']}",
+            f"- Tenant: {draft['billed_to']}",
+            f"- Property: {draft['property']}",
+            f"- Description: {draft['utility']} charges — {draft['billing_period']}",
+            f"- Amount: {draft['amount_due']}",
+            "- Status: Unpaid",
+            "",
+            f"## Next reference number: {next_reference}",
+        ]
+    )
+    entry_id = cm.create_staging_entry(
+        summary=summary,
+        content=content,
+        category="debit_notes",
+        source="operator",
+    )
+    return {
+        "entry_id": entry_id,
+        "reference": draft["reference"],
+        "amount_due": draft["amount_due"],
+        "billed_to": draft["billed_to"],
+        "next_reference": next_reference,
+    }
+
+
 def _strip_pending_framework_review(sync_status: str | None) -> str | None:
     if not sync_status:
         return sync_status
@@ -371,6 +1006,20 @@ def review_staging_entry(cm, entry: dict) -> dict | None:
 
 
 def on_staging_approved(cm, entry: dict) -> dict | None:
+    if entry.get("category") == "properties":
+        parsed_removal = _parse_property_removal_request(entry.get("content", ""))
+        if parsed_removal.get("is_removal") == "yes" and parsed_removal.get("property_ref"):
+            changed = _apply_approved_property_removal(cm, str(parsed_removal.get("property_ref") or ""))
+            return {
+                "ok": True,
+                "message": (
+                    "Committed property removal applied."
+                    if changed
+                    else "No committed property matched the approved removal request."
+                ),
+            }
+        return None
+
     if entry.get("category") != "minpaku_handoffs":
         return None
 
@@ -666,7 +1315,7 @@ def dispatch(name: str, args: dict, cm) -> str:
     )
 
 
-def maybe_handle_message(message: str, cm, role_name: str = "operator") -> str | None:
+def maybe_handle_message(message: str, cm, role_name: str = "operator", history: list[dict] | None = None) -> str | None:
     """Deterministically handle obvious Minpaku handoff commands.
 
     This avoids depending on model tool choice for simple landlord intent updates.
@@ -679,6 +1328,119 @@ def maybe_handle_message(message: str, cm, role_name: str = "operator") -> str |
         return None
 
     lowered = text.lower()
+
+    if re.fullmatch(r"(show|list)\s+all\s+properties\.?", lowered):
+        return _reply_all_properties(cm)
+
+    if "extract" in lowered and "property" in lowered and "bill" in lowered:
+        candidate = _extract_property_candidate_from_history_or_staging(cm, history)
+        if not candidate:
+            return None
+        return "\n".join(
+            [
+                "Extracted property from the utility bill:",
+                "",
+                f"- Unit: `{candidate['unit']}`",
+                f"- Building: `{candidate['building']}`",
+                f"- Full service address: `{candidate['full_address']}`",
+                "",
+                "If you want, I can also capture this as a property record for admin review.",
+            ]
+        )
+
+    if (
+        ("capture" in lowered and "property" in lowered and ("bill" in lowered or "extracted" in lowered))
+        or ("stage" in lowered and "property" in lowered and "bill" in lowered)
+        or ("add" in lowered and "property" in lowered and "bill" in lowered)
+    ):
+        candidate = _extract_property_candidate_from_history_or_staging(cm, history)
+        if not candidate:
+            return None
+        try:
+            staged_property = _stage_property_candidate(cm, candidate)
+        except Exception as exc:
+            return f"I found the property candidate from the utility bill, but staging it failed: {exc}"
+        return "\n".join(
+            [
+                "Captured. I staged the extracted property record for review.",
+                "",
+                f"- Staging entry ID: `{staged_property['entry_id']}`",
+                "- Status: `pending` (not committed yet)",
+                f"- Property: `{staged_property['property_ref']}`",
+                "",
+                "Next step: run `sc-admin review` to approve it into committed context.",
+            ]
+        )
+
+    remove_match = re.fullmatch(r"(?:remove|delete)\s+(.+?)[\.\?]?", text, re.IGNORECASE)
+    if remove_match:
+        raw_property_ref = remove_match.group(1).strip(" `")
+        resolution = _resolve_property_reference(cm, raw_property_ref)
+        if resolution["status"] not in {"exact", "unique_partial"}:
+            return None
+        property_ref = str(resolution["resolved"] or raw_property_ref)
+        staged = _stage_property_removal(cm, property_ref)
+        return "\n".join(
+            [
+                f"Done — I staged the removal of `{staged['property_ref']}` from the operator working set.",
+                "",
+                f"- Staging entry ID: `{staged['entry_id']}`",
+                "- Status: `pending` (not committed yet)",
+                "",
+                "The property will be hidden in `show all properties` immediately, and `sc-admin review` will decide whether to commit the removal to authoritative context.",
+            ]
+        )
+
+    outstanding_match = re.search(
+        r"\b(?:show|list|what are)\s+outstanding\s+debit\s+notes\s+for\s+(?P<target>.+?)[\?\.]?$",
+        text,
+        re.IGNORECASE,
+    )
+    if outstanding_match:
+        target = outstanding_match.group("target").strip(" .?")
+        reply = _reply_outstanding_debit_notes(cm, target)
+        if reply:
+            return reply
+        return None
+
+    debit_note_match = re.search(
+        r"\b(?:generate|draft|prepare)\s+(?:(?:a|an|the)\s+)?debit\s+note(?:s)?\s+for\s+(?P<target>.+?)[\?\.]?$",
+        text,
+        re.IGNORECASE,
+    )
+    if debit_note_match:
+        target = debit_note_match.group("target").strip(" .?")
+        blocked_reply = _reply_blocked_debit_note_for_removed_property(cm, target)
+        if blocked_reply:
+            return blocked_reply
+
+    if re.fullmatch(r"(?:generate|draft|prepare)\s+(?:(?:a|an|the)\s+)?debit\s+note(?:s)?(?:\s+for)?[\?\.]?", text, re.IGNORECASE):
+        blocked_reply = _reply_blocked_debit_note_without_active_property(cm)
+        if blocked_reply:
+            return blocked_reply
+
+    if re.search(r"\brecord\s+(?:the\s+)?debit\s+note\b", lowered) and "framework approval" in lowered:
+        try:
+            staged = _stage_issued_debit_note_from_history(cm, history)
+        except Exception as exc:
+            return f"I found the debit note draft, but staging the issued-note update failed: {exc}"
+        if staged:
+            return "\n".join(
+                [
+                    "Done — I staged the context update only (no committed context was changed).",
+                    "",
+                    f"- Staging entry ID: `{staged['entry_id']}`",
+                    "- Status: `pending` (awaiting framework/admin approval)",
+                    "- Captured update includes:",
+                    f"  - Mark `{staged['reference']}` as issued",
+                    f"  - Full debit note details ({staged['billed_to']}, amount {staged['amount_due']})",
+                    f"  - Request to advance next reference to `{staged['next_reference']}` after approval",
+                    "",
+                    "You can now review/approve this via `sc-admin review`.",
+                ]
+            )
+        return None
+
     if "minpaku" not in lowered:
         return None
 
@@ -692,17 +1454,24 @@ def maybe_handle_message(message: str, cm, role_name: str = "operator") -> str |
         return None
 
     match = re.search(
-        r"mark\s+(?P<property>.+?)\s+(?:as\s+)?(?P<availability>available|unavailable)\s+for\s+minpaku\b",
+        r"(?:mark|make)\s+(?P<property>.+?)\s+(?:become\s+|as\s+)?(?P<availability>available|unavailable)\s+(?:for|in)\s+minpaku\b",
         text,
         re.IGNORECASE,
     )
     if not match:
         return None
 
-    source_property_ref = match.group("property").strip(" .")
-    result = _stage_immediate_handoff(cm, source_property_ref, availability, landlord_note=None)
-    if not result.get("ok"):
+    raw_property_ref = match.group("property").strip(" .")
+    resolution = _resolve_property_reference(cm, raw_property_ref)
+    if resolution["status"] not in {"exact", "unique_partial"}:
         return None
+    source_property_ref = str(resolution["resolved"] or raw_property_ref)
+    try:
+        result = _stage_immediate_handoff(cm, source_property_ref, availability, landlord_note=None)
+    except Exception as exc:
+        return f"I found `{source_property_ref}`, but the immediate Minpaku handoff failed: {exc}"
+    if not result.get("ok"):
+        return f"I found `{source_property_ref}`, but the immediate Minpaku handoff failed."
 
     lines = []
     if result.get("already_live"):
