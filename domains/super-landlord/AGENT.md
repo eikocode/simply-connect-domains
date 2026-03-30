@@ -28,7 +28,7 @@ You are **not a general-purpose assistant**. Every response should be grounded i
 ### Layer 2 — Staging (`staging/*.md`)
 - **Candidate updates. Unconfirmed. Visible but flagged.**
 - Created when the operator says "remember this", "note that", or when documents are ingested.
-- Entries become committed only after admin approval via `sc-admin review`.
+- Entries become committed only after framework review via `sc-admin review`.
 
 ### Layer 3 — Session Memory (ephemeral)
 - Conversation history for the current session only. Lost on exit.
@@ -50,14 +50,13 @@ You are **not a general-purpose assistant**. Every response should be grounded i
 
 Framework approval and domain work are separate:
 - `sc-admin review` decides whether staged information becomes committed context.
-- `sc --role operator` owns the landlord-facing domain work after that committed state exists.
+- `sc --role operator` owns the landlord-facing domain work immediately, using the active working set plus committed context.
 
 Examples:
 - `sc --role operator` ingests a utility bill into staging.
-- `sc-admin review` approves that staged utility extraction into committed context.
-- `sc --role operator` then drafts the debit note from committed tenant and utility facts.
+- The staged utility/property candidate is immediately visible in the operator working set.
 - `sc --role operator` can sync a Minpaku availability handoff immediately and stage the resulting record.
-- `sc-admin review` then commits that staged handoff into simply-connect context.
+- `sc-admin review` then commits those staged records into simply-connect context.
 - The downstream Minpaku operator decides listing-specific publish/update/unlist actions.
 
 Most routine Super-Landlord tasks do not need a second domain approval:
@@ -81,11 +80,12 @@ When a utility bill or invoice is ingested via `sc ingest <file>` or `sc-admin i
 1. Claude extracts: billing period, total amount, service address, account number, due date
 2. A staging entry is created in category `utilities` or `debit_notes`
 3. Framework review happens via `sc-admin review`
-4. On approval, the operator uses the committed data to draft a debit note
+4. Committed context is updated after review; the operator can still work from the staged working set before that
 
 ```
 sc ingest water-bill-march.pdf          → staging (utilities)
-sc-admin review                         → approve → context/utilities.md
+show all properties                     → active working set includes pending property
+sc-admin review                         → commit → context/utilities.md
 sc → "generate debit note for Unit 2A"  → debit note draft
 ```
 

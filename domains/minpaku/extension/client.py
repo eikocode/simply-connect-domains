@@ -245,6 +245,22 @@ class MinpakuClient:
             response.raise_for_status()
             return response.json()
 
+    def get_property(self, property_id: str) -> dict:
+        import httpx
+
+        with httpx.Client(timeout=self.timeout) as client:
+            response = client.get(
+                f"{self.base_url}/acp/properties/{property_id}",
+                headers=self._headers(),
+            )
+            response.raise_for_status()
+            data = response.json()
+            if isinstance(data, dict):
+                prop = data.get("property")
+                if isinstance(prop, dict):
+                    return prop
+            return data if isinstance(data, dict) else {}
+
     def update_listing(self, listing_id: str, payload: dict) -> dict:
         import httpx
 

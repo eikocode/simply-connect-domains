@@ -1368,7 +1368,7 @@ def maybe_handle_message(message: str, cm, role_name: str = "operator", history:
                 "- Status: `pending` (not committed yet)",
                 f"- Property: `{staged_property['property_ref']}`",
                 "",
-                "Next step: run `sc-admin review` to approve it into committed context.",
+                "Next step: run `sc-admin review` to commit it into authoritative context.",
             ]
         )
 
@@ -1387,7 +1387,7 @@ def maybe_handle_message(message: str, cm, role_name: str = "operator", history:
                 f"- Staging entry ID: `{staged['entry_id']}`",
                 "- Status: `pending` (not committed yet)",
                 "",
-                "The property will be hidden in `show all properties` immediately, and `sc-admin review` will decide whether to commit the removal to authoritative context.",
+                "The property will be hidden in `show all properties` immediately, and `sc-admin review` will decide whether to commit that removal to authoritative context.",
             ]
         )
 
@@ -1436,7 +1436,7 @@ def maybe_handle_message(message: str, cm, role_name: str = "operator", history:
                     f"  - Full debit note details ({staged['billed_to']}, amount {staged['amount_due']})",
                     f"  - Request to advance next reference to `{staged['next_reference']}` after approval",
                     "",
-                    "You can now review/approve this via `sc-admin review`.",
+                    "You can now commit this staged record via `sc-admin review`.",
                 ]
             )
         return None
@@ -1502,7 +1502,7 @@ def maybe_handle_message(message: str, cm, role_name: str = "operator", history:
             "",
             "The Minpaku deployment will handle listing title, nightly price, max guests, amenities, and guest-facing rules.",
             "",
-            "Staged and synced — run sc-admin review to commit.",
+            "Staged and synced — run `sc-admin review` to commit.",
         ]
     )
     return "\n".join(lines)

@@ -186,6 +186,17 @@ def _find_property_for_query(client: MinpakuClient, query: str) -> tuple[dict[st
     return _resolve_unique_property_match(properties, query), False
 
 
+def _load_full_property_record(client: MinpakuClient, prop: dict[str, Any]) -> dict[str, Any]:
+    property_id = str(prop.get("id") or prop.get("property_id") or "").strip()
+    if not property_id:
+        return prop
+    try:
+        full = client.get_property(property_id)
+    except Exception:
+        return prop
+    return full if isinstance(full, dict) and full else prop
+
+
 def _search_property_matches(client: MinpakuClient, query: str) -> tuple[list[dict[str, Any]], bool]:
     matches = client.search_properties(query)
     if matches:
@@ -508,15 +519,16 @@ def maybe_handle_message(message: str, cm, role_name: str = "operator") -> str |
             if prop is None:
                 return f"I couldn't find a Minpaku property matching '{price_update['target']}'."
             property_id = str(prop.get("id") or prop.get("property_id") or "").strip()
+            full_prop = _load_full_property_record(client, prop)
             currency = (
                 price_update["currency_hint"]
-                or str(prop.get("currency") or "HKD")
+                or str(full_prop.get("currency") or prop.get("currency") or "HKD")
             )
-            update_payload = _build_property_update_payload(prop, price_update["nightly_price"], currency)
+            update_payload = _build_property_update_payload(full_prop, price_update["nightly_price"], currency)
             client.update_property(property_id, update_payload)
-            stage_id = _stage_price_update_note(cm, prop, price_update["nightly_price"], currency)
+            stage_id = _stage_price_update_note(cm, full_prop, price_update["nightly_price"], currency)
             note = _safe_active_listing_note(client, property_id, price_update["target"])
-            title = str(prop.get("title") or prop.get("name") or property_id)
+            title = str(full_prop.get("title") or prop.get("title") or prop.get("name") or property_id)
             return "\n".join(
                 [
                     f"Done — I updated the live property price for `{title}` to `{currency} {price_update['nightly_price']:.0f}/night`.",
@@ -538,13 +550,14 @@ def maybe_handle_message(message: str, cm, role_name: str = "operator") -> str |
             if prop is None:
                 return f"I couldn't find a Minpaku property matching '{property_edit['target']}'."
             property_id = str(prop.get("id") or prop.get("property_id") or "").strip()
+            full_prop = _load_full_property_record(client, prop)
             field = property_edit["field"]
             value = property_edit["value"]
             changes: dict[str, Any] = {field: value}
-            payload = _build_property_update_payload_from_changes(prop, changes)
+            payload = _build_property_update_payload_from_changes(full_prop, changes)
             client.update_property(property_id, payload)
-            stage_id = _stage_property_edit_note(cm, prop, field, value)
-            title = str(prop.get("title") or prop.get("name") or property_id)
+            stage_id = _stage_property_edit_note(cm, full_prop, field, value)
+            title = str(full_prop.get("title") or prop.get("title") or prop.get("name") or property_id)
             return "\n".join(
                 [
                     f"Done — I updated the live property `{title}`.",
@@ -648,7 +661,7 @@ def maybe_handle_message(message: str, cm, role_name: str = "operator") -> str |
                     lines.extend(
                         [
                             "",
-                            f"You also have {len(approved)} approved local draft(s). Say `publish the latest approved listing` to publish the next one from this operator session.",
+                            f"You also have {len(approved)} staged listing draft(s). Say `publish the latest listing draft` to publish the next one from this operator session.",
                         ]
                     )
                 return "\n".join(lines)
@@ -664,75 +677,64 @@ def maybe_handle_message(message: str, cm, role_name: str = "operator") -> str |
             lines = ["No live listings right now (`count: 0`).", ""]
             if approved:
                 lines.append(
-                    f"You have {len(approved)} approved local listing draft(s). Next: say `publish the latest approved listing` to make the next one live."
+                    f"You have {len(approved)} staged listing draft(s). Next: say `publish the latest listing draft` to make the next one live."
                 )
             elif unconfirmed:
                 lines.append(
-                    f"You have {len(unconfirmed)} unconfirmed listing draft(s). Next: run `sc-admin review`, then come back here and say `publish the latest approved listing`."
+                    f"You have {len(unconfirmed)} unconfirmed listing draft(s). They are already available for Minpaku operator work. Next: say `publish the latest listing draft` to make the next one live."
                 )
             else:
-                lines.append("Next: prepare a listing draft in `sc`, run `sc-admin review`, then say `publish the latest approved listing` here.")
+                lines.append("Next: prepare a listing draft in `sc`, then say `publish the latest listing draft` here.")
             return "\n".join(lines)
         except Exception:
             return None
 
     if "publish" in lowered and "listing" in lowered:
-        approved = _approved_listing_entries(cm)
-        unconfirmed = [
-            entry for entry in cm.list_staging()
-            if entry.get("category") == "listing_publications" and entry.get("status") == "unconfirmed"
-        ]
-        if approved:
+        actionable = _actionable_listing_entries(cm)
+        if actionable:
             target_query = _extract_listing_action_target(text, lowered, "publish")
             if target_query:
-                target = _resolve_approved_target_by_query(cm, target_query)
+                target = _resolve_listing_target_by_query(cm, target_query)
                 if target is None:
                     return None
                 return _format_listing_action_result("publish", publish_minpaku_listing(cm, target["id"]))
-            latest = approved[-1]
+            latest = actionable[-1]
             return _format_listing_action_result("publish", publish_minpaku_listing(cm, latest["id"]))
-        if unconfirmed:
-            latest = unconfirmed[-1]
-            return (
-                "The latest listing draft is not approved yet.\n\n"
-                f"The latest listing draft is still unconfirmed: `{latest['id']}`.\n"
-                "Next: run `sc-admin review`, then come back here and say `publish the latest approved listing`."
-            )
         return (
             "There is no listing draft ready to publish yet.\n\n"
-            "Next: prepare a listing draft in `sc`, run `sc-admin review`, then say `publish the latest approved listing`."
+            "Next: prepare a listing draft in `sc`, then say `publish the latest listing draft`."
         )
 
     if "update" in lowered and "listing" in lowered:
-        approved = _approved_listing_entries(cm)
-        if approved:
+        actionable = _actionable_listing_entries(cm)
+        if actionable:
             target_query = _extract_listing_action_target(text, lowered, "update")
             if target_query:
-                target = _resolve_approved_target_by_query(cm, target_query)
+                target = _resolve_listing_target_by_query(cm, target_query)
                 if target is None:
                     return None
                 return _format_listing_action_result("update", update_minpaku_listing(cm, target["id"]))
-            latest = approved[-1]
+            latest = actionable[-1]
             return _format_listing_action_result("update", update_minpaku_listing(cm, latest["id"]))
         return (
-            "There is no approved listing update ready yet.\n\n"
-            "Next: stage the listing change in `sc`, run `sc-admin review`, then say `update the latest approved listing`."
+            "There is no listing draft ready to update yet.\n\n"
+            "Next: stage the listing change in `sc`, then say `update the latest listing draft`."
         )
 
     if ("unlist" in lowered or ("remove" in lowered and "listing" in lowered) or ("delete" in lowered and "listing" in lowered)) and "property" not in lowered:
-        approved = _approved_listing_entries(cm)
-        if approved:
+        actionable = _actionable_listing_entries(cm)
+        if actionable:
             target_query = _extract_listing_action_target(text, lowered, "unlist")
             if target_query:
-                target = _resolve_approved_target_by_query(cm, target_query)
+                target = _resolve_listing_target_by_query(cm, target_query)
                 if target is None:
                     return None
                 return _format_listing_action_result("unlist", delete_minpaku_listing(cm, target["id"]))
-            latest = approved[-1]
+            latest = actionable[-1]
             return _format_listing_action_result("unlist", delete_minpaku_listing(cm, latest["id"]))
         return (
-            "There is no approved listing ready to unlist.\n\n"
-            "Next: stage the unlisting change in `sc`, run `sc-admin review`, then say `unlist the latest approved listing`."
+            "There is no listing draft ready to unlist.\n\n"
+            "Next: stage the unlisting change in `sc`, then say `unlist the latest listing draft`."
         )
 
     if "confirm" in lowered and "booking" in lowered:
@@ -975,10 +977,10 @@ def _extract_listing_payload(content: str) -> dict[str, Any]:
     return json.loads(match.group(1))
 
 
-def _approved_listing_entries(cm) -> list[dict[str, Any]]:
+def _actionable_listing_entries(cm) -> list[dict[str, Any]]:
     return [
         entry for entry in cm.list_staging()
-        if entry.get("category") == "listing_publications" and entry.get("status") == "approved"
+        if entry.get("category") == "listing_publications" and entry.get("status") in {"unconfirmed", "approved", "published", "updated"}
     ]
 
 
@@ -986,9 +988,9 @@ def _normalize_listing_ref(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
 
 
-def _resolve_approved_target_by_query(cm, query: str) -> dict[str, Any] | None:
-    approved_entries = _approved_listing_entries(cm)
-    if not approved_entries:
+def _resolve_listing_target_by_query(cm, query: str) -> dict[str, Any] | None:
+    listing_entries = _actionable_listing_entries(cm)
+    if not listing_entries:
         return None
     normalized_query = _normalize_listing_ref(query)
     if not normalized_query:
@@ -997,7 +999,7 @@ def _resolve_approved_target_by_query(cm, query: str) -> dict[str, Any] | None:
     exact_matches: list[dict[str, Any]] = []
     partial_matches: list[dict[str, Any]] = []
 
-    for entry in approved_entries:
+    for entry in listing_entries:
         payload = _extract_listing_payload(entry["content"])
         candidates = [
             str(entry.get("id") or ""),
@@ -1023,7 +1025,7 @@ def _resolve_approved_target_by_query(cm, query: str) -> dict[str, Any] | None:
 
 
 def _extract_listing_action_target(text: str, lowered: str, action: str) -> str | None:
-    if "latest approved listing" in lowered:
+    if "latest approved listing" in lowered or "latest listing draft" in lowered:
         return None
     patterns = {
         "publish": r"\bpublish\b\s+(?:the\s+)?(?:approved\s+)?listing(?:\s+draft)?(?:\s+for)?\s+(?P<target>.+)$",
@@ -1036,18 +1038,18 @@ def _extract_listing_action_target(text: str, lowered: str, action: str) -> str 
     return match.group("target").strip(" `.?")
 
 
-def _resolve_approved_target(cm, entry_id: str | None = None) -> tuple[dict[str, Any] | None, list[dict[str, str]]]:
-    approved_entries = _approved_listing_entries(cm)
-    available_entries = [{"id": entry["id"], "summary": entry.get("summary", "")} for entry in approved_entries]
-    if not approved_entries:
+def _resolve_listing_target(cm, entry_id: str | None = None) -> tuple[dict[str, Any] | None, list[dict[str, str]]]:
+    listing_entries = _actionable_listing_entries(cm)
+    available_entries = [{"id": entry["id"], "summary": entry.get("summary", "")} for entry in listing_entries]
+    if not listing_entries:
         return None, available_entries
     if entry_id:
-        for entry in approved_entries:
+        for entry in listing_entries:
             if entry["id"] == entry_id:
                 return entry, available_entries
         return None, available_entries
-    approved_entries.sort(key=lambda entry: entry.get("captured", ""))
-    return approved_entries[-1], available_entries
+    listing_entries.sort(key=lambda entry: entry.get("captured", ""))
+    return listing_entries[-1], available_entries
 
 
 def _find_committed_listing_record(markdown: str, payload: dict[str, Any]) -> dict[str, str] | None:
@@ -1224,6 +1226,19 @@ def dispatch(name: str, args: dict, cm) -> str:
                 ensure_ascii=False,
             )
 
+        live_payload = {
+            "propertyId": payload["propertyId"],
+            "platform": payload["platform"],
+            "externalId": payload.get("externalId"),
+            "title": payload.get("title"),
+            "description": payload.get("description"),
+            "nightlyPrice": payload.get("nightlyPrice"),
+            "currency": payload.get("currency"),
+            "status": "inactive" if str(payload.get("status") or "").strip().lower() == "draft" else payload.get("status"),
+            "contact": payload.get("contact"),
+        }
+        response = client.create_listing(live_payload)
+
         body = "\n".join(
             [
                 f"## Minpaku Listing Draft — {payload['title']}",
@@ -1232,6 +1247,7 @@ def dispatch(name: str, args: dict, cm) -> str:
                 f"- Source property ref: {payload['source_property_ref']}",
                 f"- Platform: {payload['platform']}",
                 f"- Status: {payload['status']}",
+                f"- Remote listing ID: {response.get('id', '(unknown)')}",
                 "",
                 "```json",
                 json.dumps(payload, indent=2, ensure_ascii=False),
@@ -1246,7 +1262,15 @@ def dispatch(name: str, args: dict, cm) -> str:
             source="operator",
         )
         return json.dumps(
-            {"ok": True, "staged": True, "entry_id": entry_id, "summary": summary, "draft": payload},
+            {
+                "ok": True,
+                "staged": True,
+                "entry_id": entry_id,
+                "summary": summary,
+                "draft": payload,
+                "remote_listing_id": response.get("id"),
+                "live_status": live_payload.get("status"),
+            },
             ensure_ascii=False,
         )
     except Exception as e:
@@ -1257,36 +1281,56 @@ def publish_minpaku_listing(cm, entry_id: str | None = None) -> dict[str, Any]:
     config_error = _check_config()
     if config_error:
         return {"ok": False, "error": config_error}
-    target, available_entries = _resolve_approved_target(cm, entry_id)
+    target, available_entries = _resolve_listing_target(cm, entry_id)
     if not target:
-        return {"ok": False, "error": "No approved Minpaku listing drafts found.", "available_entries": available_entries}
+        return {"ok": False, "error": "No Minpaku listing drafts found.", "available_entries": available_entries}
     if entry_id and not any(entry["id"] == entry_id for entry in available_entries):
-        return {"ok": False, "error": "Approved listing draft not found for that entry ID.", "available_entries": available_entries}
+        return {"ok": False, "error": "Listing draft not found for that entry ID.", "available_entries": available_entries}
     try:
         payload = _extract_listing_payload(target["content"])
-        live_status = payload.get("status") or "active"
-        if str(live_status).strip().lower() == "draft":
-            live_status = "active"
-        response = MinpakuClient().create_listing(
-            {
-                "propertyId": payload["propertyId"],
-                "platform": payload["platform"],
-                "externalId": payload.get("externalId"),
-                "title": payload.get("title"),
-                "description": payload.get("description"),
-                "nightlyPrice": payload.get("nightlyPrice"),
-                "currency": payload.get("currency"),
-                "status": live_status,
-                "contact": payload.get("contact"),
-            }
-        )
-        cm.update_committed("listing_publications", _listing_context_block(payload, response.get("id", "(unknown)"), "Published at"))
+        current_markdown = cm.load_committed().get("listing_publications", "")
+        record = _find_committed_listing_record(current_markdown, payload)
+        listing_id = None
+        if record:
+            listing_id = record["remote_listing_id"]
+            response = MinpakuClient().update_listing(
+                listing_id,
+                {
+                    "externalId": payload.get("externalId"),
+                    "title": payload.get("title"),
+                    "description": payload.get("description"),
+                    "nightlyPrice": payload.get("nightlyPrice"),
+                    "currency": payload.get("currency"),
+                    "status": "active",
+                    "contact": payload.get("contact"),
+                },
+            )
+            listing_id = response.get("id", listing_id)
+            new_section = _listing_context_block(payload | {"status": "active"}, listing_id, "Published at")
+            target_path = cm._root / "context" / "listing_publications.md"
+            target_path.write_text(_replace_committed_record(current_markdown, record["section"], new_section).rstrip() + "\n", encoding="utf-8")
+        else:
+            response = MinpakuClient().create_listing(
+                {
+                    "propertyId": payload["propertyId"],
+                    "platform": payload["platform"],
+                    "externalId": payload.get("externalId"),
+                    "title": payload.get("title"),
+                    "description": payload.get("description"),
+                    "nightlyPrice": payload.get("nightlyPrice"),
+                    "currency": payload.get("currency"),
+                    "status": "active",
+                    "contact": payload.get("contact"),
+                }
+            )
+            listing_id = response.get("id")
+            cm.update_committed("listing_publications", _listing_context_block(payload | {"status": "active"}, listing_id or "(unknown)", "Published at"))
         cm.update_staging_status(target["id"], "published", "admin")
         return {
             "ok": True,
             "entry_id": target["id"],
             "title": payload["title"],
-            "listing_id": response.get("id"),
+            "listing_id": listing_id,
             "property_id": payload.get("propertyId"),
             "source_property_ref": payload.get("source_property_ref"),
         }
@@ -1298,11 +1342,11 @@ def update_minpaku_listing(cm, entry_id: str | None = None) -> dict[str, Any]:
     config_error = _check_config()
     if config_error:
         return {"ok": False, "error": config_error}
-    target, available_entries = _resolve_approved_target(cm, entry_id)
+    target, available_entries = _resolve_listing_target(cm, entry_id)
     if not target:
-        return {"ok": False, "error": "No approved Minpaku listing drafts found.", "available_entries": available_entries}
+        return {"ok": False, "error": "No Minpaku listing drafts found.", "available_entries": available_entries}
     if entry_id and not any(entry["id"] == entry_id for entry in available_entries):
-        return {"ok": False, "error": "Approved listing draft not found for that entry ID.", "available_entries": available_entries}
+        return {"ok": False, "error": "Listing draft not found for that entry ID.", "available_entries": available_entries}
     try:
         payload = _extract_listing_payload(target["content"])
         current_markdown = cm.load_committed().get("listing_publications", "")
@@ -1341,11 +1385,11 @@ def delete_minpaku_listing(cm, entry_id: str | None = None) -> dict[str, Any]:
     config_error = _check_config()
     if config_error:
         return {"ok": False, "error": config_error}
-    target, available_entries = _resolve_approved_target(cm, entry_id)
+    target, available_entries = _resolve_listing_target(cm, entry_id)
     if not target:
-        return {"ok": False, "error": "No approved Minpaku listing drafts found.", "available_entries": available_entries}
+        return {"ok": False, "error": "No Minpaku listing drafts found.", "available_entries": available_entries}
     if entry_id and not any(entry["id"] == entry_id for entry in available_entries):
-        return {"ok": False, "error": "Approved listing draft not found for that entry ID.", "available_entries": available_entries}
+        return {"ok": False, "error": "Listing draft not found for that entry ID.", "available_entries": available_entries}
     try:
         payload = _extract_listing_payload(target["content"])
         current_markdown = cm.load_committed().get("listing_publications", "")

@@ -1,3 +1,3 @@
 # Listing Publications
 
-_No listing publication records on file. Use `sc --role operator` to prepare a Minpaku listing draft, run `sc-admin review` to commit it, then ask the operator session to publish the approved listing._
+_No listing publication records on file. Use `sc --role operator` to prepare a Minpaku listing draft, then ask the operator session to publish the latest listing draft. `sc-admin review` still commits the staged listing record into simply-connect context._
