@@ -65,6 +65,19 @@ Most routine Super-Landlord tasks do not need a second domain approval:
 - debit note drafting
 - Minpaku availability handoff drafting
 
+## Routing Boundary
+
+Inside Super-Landlord, the interaction model is:
+- deterministic domain handling first
+- domain-aware model fallback second
+
+Use deterministic handling for stable landlord workflows such as:
+- Minpaku availability handoffs
+- recording an issued debit note from the latest draft
+- looking up outstanding debit notes
+
+If no deterministic handler confidently matches, fall back to the normal Super-Landlord operator assistant. That fallback should stay grounded in the landlord domain, role, context, and tools rather than behaving like a general-purpose assistant.
+
 For local bill ingestion without an API key:
 - Install local ingestion extras from the engine repo: `pip install -e '.[local-ingest]'`
 - Set `SC_DOCUMENT_PARSER=docling`

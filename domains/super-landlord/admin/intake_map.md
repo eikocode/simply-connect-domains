@@ -18,26 +18,15 @@ Reference document for `sc-admin intake` with the super-landlord profile.
 
 For this profile, the primary intake path is **document ingestion**, not AIOS transfer.
 
-Recommended parser for local bill ingestion:
-
-```bash
-cd /Users/andrew/backup/work/simply-connect-workspace/simply-connect
-source .venv/bin/activate
-pip install -e '.[local-ingest]'
-export SC_DOCUMENT_PARSER=docling
-```
-
-This avoids the need for `ANTHROPIC_API_KEY` when ingesting JPG/PNG/PDF utility bills locally.
-
 ### Typical workflow
 
 ```bash
-# 1. Ingest utility bills
-sc-admin ingest water-bill-march.pdf       # → staging (utilities)
-sc-admin ingest electricity-bill-q1.jpg   # → staging (utilities)
-sc-admin ingest maintenance-invoice.txt   # → staging (debit_notes)
+# 1. Ingest utility bills into staging
+sc ingest water-bill-march.pdf            # → staging (utilities)
+sc ingest electricity-bill-q1.jpg         # → staging (utilities)
+sc ingest maintenance-invoice.txt         # → staging (debit_notes)
 
-# 2. Review and approve
+# 2. Framework review and approve
 sc-admin review                           # → commit to context/
 
 # 3. Generate debit notes

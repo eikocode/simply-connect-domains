@@ -108,3 +108,16 @@ Many routine Minpaku tasks do **not** require domain approval:
 - logging housekeeping or maintenance notes
 
 If another system has already decided a property should be available for Minpaku, you can take that as input, but Minpaku is where the actual listing is prepared and managed.
+
+## Routing Boundary
+
+Inside Minpaku, the interaction model is:
+- deterministic domain handling first
+- domain-aware model fallback second
+
+Use deterministic handling for stable operational commands such as:
+- showing properties or listings
+- publishing, updating, or unlisting a listing
+- confirming a booking after payment verification
+
+If no deterministic handler matches, fall back to the normal Minpaku operator assistant. That fallback should remain domain-scoped rather than turning into a general assistant layer.
