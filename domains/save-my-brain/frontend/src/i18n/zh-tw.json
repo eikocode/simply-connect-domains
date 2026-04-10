@@ -1,0 +1,79 @@
+{
+  "app": {
+    "name": "拯救腦細胞",
+    "tagline": "你的AI生活管理助手",
+    "description": "處理文件、追蹤截止日期、管理財務 — 讓你不再擔心。"
+  },
+  "nav": {
+    "home": "首頁",
+    "dashboard": "控制台",
+    "settings": "設定",
+    "login": "登入",
+    "logout": "登出",
+    "privacy": "隱私政策"
+  },
+  "landing": {
+    "hero_title": "別再被生活瑣事淹沒",
+    "hero_subtitle": "把任何文件發給你的AI助手。它會閱讀、整理、提醒你 — 支援中文、英文和日文。",
+    "cta_telegram": "在Telegram開始",
+    "cta_login": "打開控制台",
+    "features_title": "拯救腦細胞能幫你做什麼",
+    "features": [
+      { "icon": "🧾", "title": "文件智能分析", "desc": "發送任何收據、帳單、合約或證件。AI自動提取重要資訊、標記注意事項、追蹤到期日。" },
+      { "icon": "💰", "title": "財務追蹤", "desc": "從收據和帳單自動分類支出。每月按類別生成消費摘要。" },
+      { "icon": "🛡️", "title": "保險管理", "desc": "追蹤所有保單。多份保單時自動分析保障缺口。不再錯過續期日。" },
+      { "icon": "📅", "title": "截止日提醒", "desc": "護照到期、合約續約、繳費截止 — 全部自動追蹤和提醒。" },
+      { "icon": "✅", "title": "智能任務", "desc": "從文件自動建立行動項目。按緊急程度排序。不遺漏任何事項。" },
+      { "icon": "👨‍👩‍👧‍👦", "title": "家庭管理", "desc": "為家人標記文件。所有人的重要文件集中管理。" }
+    ],
+    "personas_title": "為你而設計",
+    "personas": [
+      { "icon": "👩‍💼", "title": "忙碌的專業人士", "desc": "太多帳單、合約和截止日期需要處理" },
+      { "icon": "👨‍👩‍👧", "title": "父母", "desc": "學校通知、醫療記錄、保險 — 全家大小的文件" },
+      { "icon": "🏠", "title": "業主", "desc": "租約、水電費、維修記錄" },
+      { "icon": "✈️", "title": "經常旅行的人", "desc": "護照、簽證、機票、旅遊保險 — 隨時掌握最新狀態" },
+      { "icon": "👴", "title": "照顧長輩的人", "desc": "醫療記錄、保險保單、重要文件 — 集中在一處" }
+    ],
+    "pricing_title": "簡單定價",
+    "pricing": [
+      { "name": "試用", "price": "免費", "period": "14天", "features": ["5份文件", "所有功能", "1位家庭成員"] },
+      { "name": "年費", "price": "US$79", "period": "/年", "features": ["無限文件", "所有功能", "最多5位家庭成員", "優先支援"], "popular": true },
+      { "name": "終身", "price": "US$200", "period": "一次性", "features": ["永久無限使用", "所有功能", "最多5位家庭成員", "優先支援", "搶先體驗新功能"] }
+    ]
+  },
+  "dashboard": {
+    "welcome": "歡迎回來",
+    "documents": "文件",
+    "tasks": "任務",
+    "deadlines": "截止日期",
+    "finances": "財務",
+    "family": "家庭",
+    "no_documents": "尚無文件。發送照片或PDF到你的Telegram機器人開始使用。",
+    "no_tasks": "尚無任務。任務會從你的文件自動建立。",
+    "no_deadlines": "沒有即將到期的截止日。",
+    "no_finances": "尚無財務記錄。",
+    "no_family": "尚未添加家庭成員。",
+    "chat_placeholder": "問我任何關於你文件的問題...",
+    "upload_hint": "或在這裡上傳文件"
+  },
+  "settings": {
+    "title": "設定",
+    "profile": "個人資料",
+    "billing": "方案與帳單",
+    "connections": "連線",
+    "language": "語言",
+    "timezone": "時區",
+    "telegram_connected": "Telegram已連線",
+    "upgrade": "升級方案"
+  },
+  "common": {
+    "loading": "載入中...",
+    "error": "發生錯誤，請再試一次。",
+    "save": "儲存",
+    "cancel": "取消",
+    "back": "返回",
+    "days_left": "天後到期",
+    "overdue": "已過期",
+    "powered_by": "由 Anthropic 的 Claude AI 驅動"
+  }
+}

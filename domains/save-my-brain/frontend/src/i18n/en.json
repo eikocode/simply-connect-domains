@@ -1,0 +1,79 @@
+{
+  "app": {
+    "name": "Save My Brain",
+    "tagline": "Your AI life admin assistant",
+    "description": "Process documents, track deadlines, manage finances — so you can stop worrying."
+  },
+  "nav": {
+    "home": "Home",
+    "dashboard": "Dashboard",
+    "settings": "Settings",
+    "login": "Login",
+    "logout": "Logout",
+    "privacy": "Privacy"
+  },
+  "landing": {
+    "hero_title": "Stop losing track of life admin",
+    "hero_subtitle": "Send any document to your AI assistant. It reads, organizes, and reminds you — in English, Chinese, or Japanese.",
+    "cta_telegram": "Start on Telegram",
+    "cta_login": "Open Dashboard",
+    "features_title": "What Save My Brain does for you",
+    "features": [
+      { "icon": "🧾", "title": "Document Intelligence", "desc": "Send any receipt, bill, contract, or ID. AI extracts key details, flags red flags, tracks expiry dates." },
+      { "icon": "💰", "title": "Financial Tracking", "desc": "Automatic spending categorization from receipts and statements. Monthly summaries by category." },
+      { "icon": "🛡️", "title": "Insurance Overview", "desc": "Track all your policies. Get gap analysis when you have multiple policies. Never miss a renewal." },
+      { "icon": "📅", "title": "Deadline Alerts", "desc": "Passport expiry, contract renewals, payment deadlines — all tracked and reminded automatically." },
+      { "icon": "✅", "title": "Smart Tasks", "desc": "Auto-created action items from your documents. Prioritized by urgency. Nothing falls through the cracks." },
+      { "icon": "👨‍👩‍👧‍👦", "title": "Family Admin", "desc": "Tag documents to family members. Keep everyone's important files organized in one place." }
+    ],
+    "personas_title": "Built for people like you",
+    "personas": [
+      { "icon": "👩‍💼", "title": "Busy professionals", "desc": "Too many bills, contracts, and deadlines to keep track of" },
+      { "icon": "👨‍👩‍👧", "title": "Parents", "desc": "School notices, medical records, insurance — for the whole family" },
+      { "icon": "🏠", "title": "Property owners", "desc": "Tenancy agreements, utility bills, maintenance records" },
+      { "icon": "✈️", "title": "Frequent travelers", "desc": "Passports, visas, bookings, travel insurance — always current" },
+      { "icon": "👴", "title": "Caring for elderly parents", "desc": "Medical records, insurance policies, important documents — all in one place" }
+    ],
+    "pricing_title": "Simple pricing",
+    "pricing": [
+      { "name": "Trial", "price": "Free", "period": "14 days", "features": ["5 documents", "All features", "1 family member"] },
+      { "name": "Annual", "price": "US$79", "period": "/year", "features": ["Unlimited documents", "All features", "Up to 5 family members", "Priority support"], "popular": true },
+      { "name": "Lifetime", "price": "US$200", "period": "one-time", "features": ["Unlimited forever", "All features", "Up to 5 family members", "Priority support", "Early access to new features"] }
+    ]
+  },
+  "dashboard": {
+    "welcome": "Welcome back",
+    "documents": "Documents",
+    "tasks": "Tasks",
+    "deadlines": "Deadlines",
+    "finances": "Finances",
+    "family": "Family",
+    "no_documents": "No documents yet. Send a photo or PDF to your Telegram bot to get started.",
+    "no_tasks": "No tasks yet. Tasks are auto-created from your documents.",
+    "no_deadlines": "No upcoming deadlines.",
+    "no_finances": "No financial records yet.",
+    "no_family": "No family members added yet.",
+    "chat_placeholder": "Ask me anything about your documents...",
+    "upload_hint": "Or upload a document here"
+  },
+  "settings": {
+    "title": "Settings",
+    "profile": "Profile",
+    "billing": "Plan & Billing",
+    "connections": "Connections",
+    "language": "Language",
+    "timezone": "Timezone",
+    "telegram_connected": "Telegram connected",
+    "upgrade": "Upgrade Plan"
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "Something went wrong. Please try again.",
+    "save": "Save",
+    "cancel": "Cancel",
+    "back": "Back",
+    "days_left": "days left",
+    "overdue": "Overdue",
+    "powered_by": "Powered by Claude AI from Anthropic"
+  }
+}

@@ -15,3 +15,4 @@ staging/
 
 # macOS / editor noise
 .DS_Store
+node_modules/
