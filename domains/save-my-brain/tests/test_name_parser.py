@@ -106,8 +106,8 @@ class TestEdgeCases:
         assert parse_names(long_name) == []
         assert parse_names(f"John, {long_name}, Mary") == ["John", "Mary"]
 
-    def test_duplicate_names_preserved(self):
-        """If user types the same name twice, keep both — let downstream dedup."""
+    def test_duplicate_names_preserved_by_parser(self):
+        """Parser keeps duplicates — dedup happens in the FSM step."""
         assert parse_names("John, John") == ["John", "John"]
 
 

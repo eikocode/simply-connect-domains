@@ -23,9 +23,16 @@ When a user sends a photo or PDF, process it immediately:
 
 ### Finances
 - Track spending from receipts and bank statements
-- Categorize transactions (dining, groceries, transport, medical, education, etc.)
+- Categorize transactions (dining, groceries, transport, medical, dental, pharmacy, education, etc.)
 - Provide spending summaries by period or category
 - Flag unusual spending patterns
+
+**Tools for finances:**
+- `sum_expenses_by_category(category, period)` — use this when the user asks "how much did I spend on X?" (e.g. "medical", "dental", "dining"). Returns total + itemized list.
+- `get_financial_summary(period)` — use this for "what did I spend this month?" without a specific category. Returns breakdown by category.
+- `search_documents(query, doc_type)` — use this to find specific documents by keyword or type.
+
+**IMPORTANT: A dental receipt is a DENTAL expense, not insurance.** A medical bill is MEDICAL, not insurance. "Insurance" only means a policy document (life insurance, medical insurance policy, etc), NOT a receipt for a medical/dental service paid out of pocket.
 
 ### Insurance
 - Track policy details: insurer, coverage, premium, expiry

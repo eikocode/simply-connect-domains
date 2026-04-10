@@ -27,11 +27,11 @@ export default function Onboarding() {
   const [familyNames, setFamilyNames] = useState([]);
   const [familyError, setFamilyError] = useState("");
 
-  // Example names per language (comma-separated as per instructions)
+  // Example names per language (one per line — web supports newlines)
   const exampleNames = {
-    en: "John, Mary",
-    "zh-tw": "大明、美美",
-    ja: "三郎、雅美",
+    en: "John\nMary",
+    "zh-tw": "大明\n美美",
+    ja: "三郎\n雅美",
   };
 
   function handleConsent(agreed) {
@@ -60,22 +60,49 @@ export default function Onboarding() {
       .filter((n) => n && n.length < 60);
   }
 
+  function dedupNames(names) {
+    // Case-insensitive dedup, preserving first-seen order.
+    // Returns { unique: [...], duplicates: [...] }
+    const seen = new Set();
+    const unique = [];
+    const duplicates = [];
+    for (const name of names) {
+      const key = name.toLowerCase();
+      if (seen.has(key)) {
+        duplicates.push(name);
+      } else {
+        seen.add(key);
+        unique.push(name);
+      }
+    }
+    return { unique, duplicates };
+  }
+
   function handleFamilySubmit(e) {
     e.preventDefault();
     setFamilyError("");
 
-    const names = parseNames(familyText);
+    const raw = parseNames(familyText);
+    const { unique, duplicates } = dedupNames(raw);
 
-    // REJECT if too many — show warning, don't advance
-    if (names.length > MAX_FAMILY_MEMBERS) {
+    // REJECT if too many (after dedup) — show warning, don't advance
+    if (unique.length > MAX_FAMILY_MEMBERS) {
       setFamilyError(
-        t("onboarding.family_too_many").replace("{count}", names.length)
+        t("onboarding.family_too_many").replace("{count}", unique.length)
       );
       return;
     }
 
-    setFamilyNames(names);
-    completeOnboarding(names);
+    // If there were duplicates, surface them (but still proceed)
+    if (duplicates.length > 0) {
+      const dupNote = t("onboarding.family_dup_note")
+        .replace("{dups}", duplicates.join(", "));
+      // Show as info, not error — still proceed
+      alert(dupNote);
+    }
+
+    setFamilyNames(unique);
+    completeOnboarding(unique);
   }
 
   function completeOnboarding(names) {

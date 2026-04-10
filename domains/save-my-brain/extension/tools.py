@@ -2,15 +2,20 @@
 Save My Brain — Extension Tools
 
 MCP tools for document search, task management, financial summaries,
-and expiry date tracking. All data comes from committed context files.
+and expiry date tracking. Data is stored in SQLite (DataOS pattern from
+apps/save-my-brain/) at data/smb.db, with human-readable summaries
+mirrored to context/documents.md for Claude's committed context.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import datetime, date
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -20,20 +25,37 @@ from typing import Any
 TOOLS: list[dict] = [
     {
         "name": "search_documents",
-        "description": "Search across all processed documents by keyword, type, or date range. Returns matching document summaries.",
+        "description": "Search stored documents by keyword or type. Returns matching document summaries from the SQLite database. Empty query lists all documents.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Search keyword or phrase",
+                    "description": "Search keyword or phrase (optional — empty lists all)",
                 },
                 "doc_type": {
                     "type": "string",
                     "description": "Optional filter: receipt, bank_statement, insurance, medical, contract, utility, tax, school, travel, hotel, event, id_document",
                 },
             },
-            "required": ["query"],
+        },
+    },
+    {
+        "name": "sum_expenses_by_category",
+        "description": "Sum expenses by category for a given period. Use this when the user asks 'how much did I spend on X?' or 'what are my medical/dental/dining expenses?'. Returns total plus itemized list.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "description": "Expense category: medical, dental, pharmacy, dining, groceries, transport, utilities, shopping, entertainment, education, beauty, fitness, pets, other",
+                },
+                "period": {
+                    "type": "string",
+                    "description": "Period: 'this_month', 'last_month', or 'YYYY-MM' (default: this_month)",
+                },
+            },
+            "required": ["category"],
         },
     },
     {
@@ -146,6 +168,12 @@ def dispatch(name: str, args: dict[str, Any], cm) -> str:
         return _list_tasks(args.get("status", "pending"), cm)
     elif name == "get_financial_summary":
         return _get_financial_summary(args.get("period", "this_month"), cm)
+    elif name == "sum_expenses_by_category":
+        return _sum_expenses_by_category(
+            args.get("category", ""),
+            args.get("period", "this_month"),
+            cm,
+        )
     elif name == "list_family_members":
         return _list_family_members(cm)
     elif name == "add_family_member":
@@ -158,143 +186,271 @@ def dispatch(name: str, args: dict[str, Any], cm) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Handlers
+# DB import helper (works both as package and flat module)
+# ---------------------------------------------------------------------------
+
+def _get_db():
+    """Import the database helper module lazily."""
+    try:
+        from . import database as db
+        return db
+    except ImportError:
+        pass
+    import importlib, sys
+    from pathlib import Path as _P
+    ext_dir = _P(__file__).parent
+    if str(ext_dir) not in sys.path:
+        sys.path.insert(0, str(ext_dir))
+    import database as db  # type: ignore
+    return db
+
+
+def _resolve_period(period: str) -> str:
+    """Turn 'this_month' / 'last_month' / 'YYYY-MM' into a YYYY-MM string."""
+    if period == "this_month":
+        return date.today().strftime("%Y-%m")
+    if period == "last_month":
+        today = date.today()
+        if today.month == 1:
+            return f"{today.year - 1}-12"
+        return f"{today.year}-{today.month - 1:02d}"
+    return period  # Assume YYYY-MM
+
+
+# ---------------------------------------------------------------------------
+# Handlers — SQL-backed (DataOS pattern)
 # ---------------------------------------------------------------------------
 
 def _search_documents(query: str, doc_type: str | None, cm) -> str:
-    """Search committed document summaries by keyword and optional type filter."""
-    committed = cm.load_committed()
-    docs_text = committed.get("documents", "")
-
-    if not docs_text or not query:
-        return json.dumps({"matches": [], "count": 0, "query": query})
-
-    # Split into document sections (## headers)
-    sections = re.split(r'\n(?=## )', docs_text)
-    query_lower = query.lower()
-
-    matches = []
-    for section in sections:
-        if query_lower in section.lower():
-            if doc_type and doc_type.lower() not in section.lower():
-                continue
-            # Extract first line as title
-            title = section.strip().split("\n")[0].lstrip("# ").strip()
-            matches.append({"title": title, "excerpt": section.strip()[:300]})
-
-    return json.dumps({
-        "query": query,
-        "doc_type_filter": doc_type,
-        "matches": matches[:10],
-        "count": len(matches),
-    })
+    """SQL search across smb_documents by filename, summary, or extracted text."""
+    db = _get_db()
+    conn = db.get_connection(cm)
+    try:
+        sql = """
+            SELECT id, filename, doc_type, summary, uploaded_at
+            FROM smb_documents
+            WHERE 1=1
+        """
+        params: list = []
+        if query:
+            sql += " AND (filename LIKE ? OR summary LIKE ? OR extracted_text LIKE ?)"
+            like = f"%{query}%"
+            params.extend([like, like, like])
+        if doc_type:
+            sql += " AND doc_type = ?"
+            params.append(doc_type)
+        sql += " ORDER BY uploaded_at DESC LIMIT 20"
+        rows = conn.execute(sql, params).fetchall()
+        matches = [
+            {
+                "id": r["id"],
+                "title": r["filename"],
+                "doc_type": r["doc_type"],
+                "excerpt": (r["summary"] or "")[:300],
+                "uploaded_at": r["uploaded_at"],
+            }
+            for r in rows
+        ]
+        return json.dumps({
+            "query": query,
+            "doc_type_filter": doc_type,
+            "matches": matches,
+            "count": len(matches),
+        }, ensure_ascii=False)
+    finally:
+        conn.close()
 
 
 def _list_expiry_dates(days_ahead: int, cm) -> str:
-    """Extract dates from calendar context, filter by days_ahead."""
-    committed = cm.load_committed()
-    calendar_text = committed.get("calendar", "")
-
-    if not calendar_text:
-        return json.dumps({"dates": [], "count": 0, "message": "No dates tracked yet."})
-
+    """Pull upcoming dates from smb_documents (JSON-encoded) + smb_policies.expiry_date."""
+    db = _get_db()
+    conn = db.get_connection(cm)
     today = date.today()
-    dates = []
+    upcoming: list[dict] = []
 
-    # Parse date entries (format: - YYYY-MM-DD: label)
-    for match in re.finditer(r'(\d{4}-\d{2}-\d{2})[:\s]+(.+?)(?:\n|$)', calendar_text):
-        try:
-            d = datetime.strptime(match.group(1), "%Y-%m-%d").date()
-            days_until = (d - today).days
+    try:
+        # 1. Scan smb_documents.important_dates (JSON array)
+        rows = conn.execute(
+            "SELECT id, filename, doc_type, important_dates FROM smb_documents "
+            "WHERE important_dates IS NOT NULL AND important_dates != '[]'"
+        ).fetchall()
+        for r in rows:
+            try:
+                dates_list = json.loads(r["important_dates"] or "[]")
+            except json.JSONDecodeError:
+                continue
+            for d in dates_list:
+                date_str = d.get("date", "")
+                try:
+                    parsed = datetime.strptime(date_str, "%Y-%m-%d").date()
+                except ValueError:
+                    continue
+                days_until = (parsed - today).days
+                if 0 <= days_until <= days_ahead:
+                    upcoming.append({
+                        "date": date_str,
+                        "label": d.get("label", ""),
+                        "days_until": days_until,
+                        "priority": _priority_for_days(days_until),
+                        "source": f"{r['doc_type']}: {r['filename']}",
+                    })
+
+        # 2. Add insurance policy expiry dates
+        policy_rows = conn.execute(
+            "SELECT id, insurer, policy_type, expiry_date FROM smb_policies "
+            "WHERE expiry_date IS NOT NULL"
+        ).fetchall()
+        for r in policy_rows:
+            try:
+                parsed = datetime.strptime(r["expiry_date"], "%Y-%m-%d").date()
+            except (ValueError, TypeError):
+                continue
+            days_until = (parsed - today).days
             if 0 <= days_until <= days_ahead:
-                priority = "P1" if days_until <= 7 else "P2" if days_until <= 30 else "P3" if days_until <= 90 else "P4"
-                dates.append({
-                    "date": match.group(1),
-                    "label": match.group(2).strip(),
+                upcoming.append({
+                    "date": r["expiry_date"],
+                    "label": f"{r['insurer'] or 'Insurance'} ({r['policy_type'] or ''}) expires",
                     "days_until": days_until,
-                    "priority": priority,
+                    "priority": _priority_for_days(days_until),
+                    "source": f"policy #{r['id']}",
                 })
-        except ValueError:
-            continue
 
-    dates.sort(key=lambda x: x["days_until"])
-    return json.dumps({"dates": dates, "count": len(dates), "days_ahead": days_ahead})
+        upcoming.sort(key=lambda x: x["days_until"])
+        return json.dumps({
+            "dates": upcoming,
+            "count": len(upcoming),
+            "days_ahead": days_ahead,
+        }, ensure_ascii=False)
+    finally:
+        conn.close()
+
+
+def _priority_for_days(days: int) -> str:
+    if days <= 7:
+        return "P1"
+    if days <= 30:
+        return "P2"
+    if days <= 90:
+        return "P3"
+    return "P4"
 
 
 def _list_tasks(status_filter: str, cm) -> str:
-    """Extract tasks from tasks context file."""
-    committed = cm.load_committed()
-    tasks_text = committed.get("tasks", "")
+    """Tasks come from document action_items (JSON arrays) — SQL query."""
+    db = _get_db()
+    conn = db.get_connection(cm)
+    tasks: list[dict] = []
+    try:
+        rows = conn.execute(
+            "SELECT id, filename, doc_type, action_items, important_dates "
+            "FROM smb_documents "
+            "WHERE action_items IS NOT NULL AND action_items != '[]'"
+        ).fetchall()
+        for r in rows:
+            try:
+                items = json.loads(r["action_items"] or "[]")
+                dates_list = json.loads(r["important_dates"] or "[]")
+            except json.JSONDecodeError:
+                continue
+            # Derive priority from the earliest important date
+            priority = "P3"
+            if dates_list:
+                min_days = min(
+                    (d.get("days_until", 365) for d in dates_list if d.get("days_until", -1) >= 0),
+                    default=365,
+                )
+                priority = _priority_for_days(min_days)
+            for item in items:
+                tasks.append({
+                    "description": item if isinstance(item, str) else str(item),
+                    "priority": priority,
+                    "status": "pending",
+                    "source": f"{r['doc_type']}: {r['filename']}",
+                })
 
-    if not tasks_text:
-        return json.dumps({"tasks": [], "count": 0, "message": "No tasks yet."})
+        # Sort by priority
+        priority_order = {"P1": 0, "P2": 1, "P3": 2, "P4": 3}
+        tasks.sort(key=lambda t: priority_order.get(t["priority"], 9))
 
-    tasks = []
-    # Parse task entries (format: - [x] or - [ ] P1: task description)
-    for match in re.finditer(r'-\s*\[([ xX])\]\s*(P[1-4])?\s*:?\s*(.+?)(?:\n|$)', tasks_text):
-        done = match.group(1).lower() == "x"
-        status = "done" if done else "pending"
-        priority = match.group(2) or "P3"
-        description = match.group(3).strip()
-
-        if status_filter == "all" or status_filter == status:
-            tasks.append({
-                "description": description,
-                "priority": priority,
-                "status": status,
-            })
-
-    # Sort by priority
-    priority_order = {"P1": 0, "P2": 1, "P3": 2, "P4": 3}
-    tasks.sort(key=lambda t: priority_order.get(t["priority"], 9))
-
-    return json.dumps({"tasks": tasks, "count": len(tasks), "filter": status_filter})
+        return json.dumps({
+            "tasks": tasks,
+            "count": len(tasks),
+            "filter": status_filter,
+        }, ensure_ascii=False)
+    finally:
+        conn.close()
 
 
 def _get_financial_summary(period: str, cm) -> str:
-    """Aggregate spending from finances context file."""
-    committed = cm.load_committed()
-    finances_text = committed.get("finances", "")
+    """SUM expenses by category using SQL. Accepts 'this_month', 'last_month', 'YYYY-MM'."""
+    db = _get_db()
+    target = _resolve_period(period)
+    conn = db.get_connection(cm)
+    try:
+        rows = conn.execute(
+            """SELECT category, SUM(amount) as total, COUNT(*) as cnt
+               FROM smb_transactions
+               WHERE date LIKE ? AND is_income = 0
+               GROUP BY category
+               ORDER BY total DESC""",
+            (f"{target}%",),
+        ).fetchall()
+        by_category = {r["category"] or "other": round(r["total"] or 0, 2) for r in rows}
+        txn_count = sum(r["cnt"] for r in rows)
+        total = round(sum(by_category.values()), 2)
 
-    if not finances_text:
-        return json.dumps({"summary": {}, "total": 0, "message": "No financial records yet."})
+        # Also grab income
+        income_row = conn.execute(
+            "SELECT COALESCE(SUM(amount), 0) as total FROM smb_transactions "
+            "WHERE date LIKE ? AND is_income = 1",
+            (f"{target}%",),
+        ).fetchone()
+        income = round(income_row["total"] or 0, 2)
 
-    # Determine target month
-    if period == "this_month":
-        target = date.today().strftime("%Y-%m")
-    elif period == "last_month":
-        today = date.today()
-        if today.month == 1:
-            target = f"{today.year - 1}-12"
-        else:
-            target = f"{today.year}-{today.month - 1:02d}"
-    else:
-        target = period  # Assume YYYY-MM format
+        return json.dumps({
+            "period": target,
+            "by_category": by_category,
+            "total_expenses": total,
+            "total_income": income,
+            "transaction_count": txn_count,
+        }, ensure_ascii=False)
+    finally:
+        conn.close()
 
-    # Parse transactions (format: | date | amount | merchant | category | description |)
-    categories = {}
-    total = 0.0
-    for match in re.finditer(
-        r'\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*([-\d,.]+)\s*\|\s*(.+?)\s*\|\s*(\w+)\s*\|',
-        finances_text
-    ):
-        tx_date = match.group(1)
-        if not tx_date.startswith(target):
-            continue
-        try:
-            amount = float(match.group(2).replace(",", ""))
-        except ValueError:
-            continue
-        category = match.group(4).strip()
-        categories[category] = categories.get(category, 0) + amount
-        total += amount
 
-    return json.dumps({
-        "period": target,
-        "by_category": categories,
-        "total": round(total, 2),
-        "transaction_count": sum(1 for _ in re.finditer(r'\|\s*' + re.escape(target), finances_text)),
-    })
+def _sum_expenses_by_category(category: str, period: str, cm) -> str:
+    """Fast path: 'what are my medical expenses this month?'"""
+    db = _get_db()
+    target = _resolve_period(period)
+    conn = db.get_connection(cm)
+    try:
+        rows = conn.execute(
+            """SELECT date, amount, merchant, description, currency
+               FROM smb_transactions
+               WHERE category = ? AND date LIKE ? AND is_income = 0
+               ORDER BY date DESC""",
+            (category, f"{target}%"),
+        ).fetchall()
+        items = [
+            {
+                "date": r["date"],
+                "amount": abs(r["amount"] or 0),
+                "merchant": r["merchant"],
+                "description": r["description"],
+                "currency": r["currency"] or "HKD",
+            }
+            for r in rows
+        ]
+        total = round(sum(i["amount"] for i in items), 2)
+        return json.dumps({
+            "category": category,
+            "period": target,
+            "total": total,
+            "count": len(items),
+            "items": items[:20],
+        }, ensure_ascii=False)
+    finally:
+        conn.close()
 
 
 def _list_family_members(cm) -> str:
@@ -498,12 +654,15 @@ def maybe_handle_document(
     **kwargs,
 ) -> str | None:
     """
-    Handle document uploads directly — process via Claude Vision and return
-    a formatted summary. Skips the default staging-for-review flow.
+    Handle document uploads with the full AIOS-style intelligence pipeline:
+      1. Hash check — detect duplicates before spending Claude tokens
+      2. Classify (Claude Haiku) — doc_type, names, currency
+      3. Extract (Claude Haiku/Sonnet) — structured data per schema
+      4. Write to SQLite tables (smb_documents, smb_transactions, etc.)
+      5. Append summary to context/documents.md for Claude's context window
+      6. Return formatted response with smart categorization
 
-    Returns None (falls through to default) if:
-    - User hasn't completed onboarding yet
-    - Claude Vision is not available
+    Returns None (falls through to default staging) only if onboarding isn't done.
     """
     user_id = str(kwargs.get("user_id", ""))
     if not user_id:
@@ -512,108 +671,315 @@ def maybe_handle_document(
     # Only process if onboarding is complete
     state = _load_onboarding_state(user_id, cm)
     if not state or not state.get("completed"):
-        return None  # Let default staging handle it (or block via onboarding)
+        return None  # Let default staging handle it
 
     lang = state.get("language", "en")
 
-    # Use simply-connect's ingestion pipeline (already configured)
-    # but format the result as a nice summary instead of staging
-    import tempfile
-    import os
-    from pathlib import Path
-
     try:
-        # Write to temp file
-        suffix = ".jpg" if mime_type.startswith("image/") else ".pdf" if mime_type == "application/pdf" else ".bin"
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
-            f.write(file_bytes)
-            tmp_path = Path(f.name)
-
+        from . import database as db
+        from . import intelligence as intel
+    except ImportError:
+        # Package-style import failed (extension loaded flat) — use sys.modules fallback
+        import importlib, sys
+        pkg_name = __name__.rsplit(".", 1)[0] if "." in __name__ else None
         try:
-            from simply_connect.ingestion import ingest_document
+            if pkg_name:
+                db = importlib.import_module(f"{pkg_name}.database")
+                intel = importlib.import_module(f"{pkg_name}.intelligence")
+            else:
+                from pathlib import Path as _P
+                ext_dir = _P(__file__).parent
+                if str(ext_dir) not in sys.path:
+                    sys.path.insert(0, str(ext_dir))
+                import database as db
+                import intelligence as intel
+        except Exception as e:
+            log.exception(f"Could not import database/intelligence: {e}")
+            return _error_reply(lang, str(e))
 
-            committed = cm.load_committed()
-            # Force docling (local, no API key) for save-my-brain
-            result = ingest_document(
-                tmp_path,
-                committed,
-                cm._profile,
-                parser="docling",
+    # Step 1: Hash check — duplicate detection
+    file_hash = db.compute_file_hash(file_bytes)
+    existing = db.find_document_by_hash(cm, file_hash)
+    if existing:
+        return _dup_reply(
+            lang,
+            existing_doc_type=existing.get("doc_type", "unknown"),
+            uploaded_at=existing.get("uploaded_at", ""),
+            summary=existing.get("summary", ""),
+        )
+
+    # Step 2 + 3: Classify and extract via Claude
+    try:
+        extraction = intel.process_document(
+            file_bytes, filename, mime_type, user_language=lang,
+        )
+    except Exception as e:
+        log.exception(f"Intelligence pipeline failed: {e}")
+        return _error_reply(lang, str(e))
+
+    if extraction.get("error"):
+        return _error_reply(lang, extraction["error"])
+
+    doc_type = extraction.get("doc_type", "other")
+
+    # Step 4: Auto-tag family member from detected names
+    family_member_id = None
+    detected_names = extraction.get("detected_names", [])
+    for name in detected_names:
+        fm_id = db.find_family_member_id(cm, name)
+        if fm_id:
+            family_member_id = fm_id
+            break
+
+    # Step 5: Insert into SQLite
+    file_type = "pdf" if mime_type == "application/pdf" else (
+        "image" if mime_type.startswith("image/") else "other"
+    )
+    doc_id = db.insert_document(cm, {
+        "filename": filename,
+        "file_hash": file_hash,
+        "file_type": file_type,
+        "doc_type": doc_type,
+        "summary": extraction.get("summary", ""),
+        "key_points": extraction.get("key_points", []),
+        "important_dates": extraction.get("important_dates", []),
+        "red_flags": extraction.get("red_flags", []),
+        "action_items": extraction.get("action_items", []),
+        "family_member_id": family_member_id,
+        "currency": extraction.get("currency"),
+    })
+
+    # Step 6: Insert type-specific structured data
+    txn_count = 0
+    transactions = extraction.get("transactions", [])
+    if transactions:
+        txn_count = db.insert_transactions(
+            cm, doc_id, transactions, family_member_id,
+            extraction.get("currency") or "HKD",
+        )
+
+    if doc_type == "insurance" and extraction.get("policy"):
+        db.insert_policy(cm, doc_id, extraction["policy"], family_member_id)
+
+    if doc_type == "medical" and extraction.get("medical_record"):
+        db.insert_medical(cm, doc_id, extraction["medical_record"], family_member_id)
+
+    # Step 7: Mirror summary to context/documents.md so Claude can see it
+    try:
+        doc_md = cm._root / "context" / "documents.md"
+        if doc_md.exists():
+            existing_md = doc_md.read_text(encoding="utf-8")
+            new_entry = _format_doc_md_entry(filename, doc_type, extraction, transactions)
+            doc_md.write_text(existing_md.rstrip() + "\n\n" + new_entry + "\n", encoding="utf-8")
+    except Exception as e:
+        log.warning(f"Could not mirror to documents.md: {e}")
+
+    # Step 8: Format user-facing response
+    return _format_success_reply(lang, doc_type, extraction, transactions, txn_count)
+
+
+# ---------------------------------------------------------------------------
+# Reply formatters
+# ---------------------------------------------------------------------------
+
+_DOC_TYPE_EMOJI = {
+    "receipt": "🧾", "bank_statement": "🏦", "credit_card": "💳",
+    "insurance": "🛡️", "medical": "🏥", "dental": "🦷",
+    "legal": "⚖️", "contract": "📋", "mortgage": "🏠",
+    "utility": "💡", "id_document": "🪪", "tax": "📊",
+    "school": "🎓", "travel": "✈️", "hotel": "🏨", "event": "📅",
+    "other": "📄",
+}
+
+_DOC_TYPE_LABELS = {
+    "en": {
+        "receipt": "Receipt", "bank_statement": "Bank Statement",
+        "credit_card": "Credit Card", "insurance": "Insurance Policy",
+        "medical": "Medical Record", "legal": "Legal Document",
+        "contract": "Contract", "mortgage": "Mortgage",
+        "utility": "Utility Bill", "id_document": "ID Document",
+        "tax": "Tax Document", "school": "School Notice",
+        "travel": "Travel Booking", "hotel": "Hotel Booking",
+        "event": "Event", "other": "Document",
+    },
+    "zh-tw": {
+        "receipt": "收據", "bank_statement": "銀行對帳單",
+        "credit_card": "信用卡帳單", "insurance": "保單",
+        "medical": "醫療記錄", "legal": "法律文件",
+        "contract": "合約", "mortgage": "按揭文件",
+        "utility": "水電費單", "id_document": "身份證明文件",
+        "tax": "稅務文件", "school": "學校通知",
+        "travel": "旅遊訂單", "hotel": "酒店訂單",
+        "event": "活動", "other": "文件",
+    },
+    "ja": {
+        "receipt": "レシート", "bank_statement": "銀行明細",
+        "credit_card": "クレジット明細", "insurance": "保険証書",
+        "medical": "医療記録", "legal": "法律文書",
+        "contract": "契約書", "mortgage": "住宅ローン",
+        "utility": "公共料金", "id_document": "身分証明書",
+        "tax": "税務書類", "school": "学校通知",
+        "travel": "旅行予約", "hotel": "ホテル予約",
+        "event": "イベント", "other": "書類",
+    },
+}
+
+
+def _format_success_reply(lang: str, doc_type: str, extraction: dict,
+                          transactions: list, txn_count: int) -> str:
+    emoji = _DOC_TYPE_EMOJI.get(doc_type, "📄")
+    type_label = _DOC_TYPE_LABELS.get(lang, _DOC_TYPE_LABELS["en"]).get(doc_type, doc_type)
+
+    headers = {
+        "en":    {"type": "Document Type", "summary": "Summary",
+                  "dates": "Important Dates", "flags": "⚠️ Red Flags",
+                  "actions": "Action Items", "amount": "Amount",
+                  "processed": "✅ Saved"},
+        "zh-tw": {"type": "文件類型", "summary": "摘要",
+                  "dates": "重要日期", "flags": "⚠️ 注意事項",
+                  "actions": "建議行動", "amount": "金額",
+                  "processed": "✅ 已儲存"},
+        "ja":    {"type": "書類の種類", "summary": "要約",
+                  "dates": "重要な日付", "flags": "⚠️ 注意事項",
+                  "actions": "推奨アクション", "amount": "金額",
+                  "processed": "✅ 保存しました"},
+    }
+    h = headers.get(lang, headers["en"])
+
+    lines = [f"{emoji} *{h['type']}:* {type_label}", ""]
+
+    summary = extraction.get("summary", "")
+    if summary:
+        lines.append(f"*{h['summary']}*")
+        lines.append(summary)
+        lines.append("")
+
+    # Transaction summary (receipts / bank / utility)
+    if transactions:
+        currency = extraction.get("currency") or "HKD"
+        total = sum(abs(float(t.get("amount", 0) or 0)) for t in transactions)
+        if len(transactions) == 1:
+            t = transactions[0]
+            cat = t.get("category", "other")
+            merch = t.get("merchant", "")
+            amt = abs(float(t.get("amount", 0) or 0))
+            lines.append(f"💰 *{h['amount']}:* {currency} {amt:,.2f}")
+            if merch:
+                lines.append(f"   {merch} · _{cat}_")
+        else:
+            lines.append(f"💰 *{h['amount']}:* {currency} {total:,.2f} ({len(transactions)} txns)")
+        lines.append("")
+
+    dates = extraction.get("important_dates", [])
+    if dates:
+        lines.append(f"*{h['dates']}*")
+        for d in dates[:5]:
+            days = d.get("days_until", -1)
+            label = d.get("label", "")
+            date_str = d.get("date", "")
+            urgency = " 🔴" if 0 <= days <= 7 else " 🟡" if 0 <= days <= 30 else ""
+            if days >= 0:
+                lines.append(f"• {label}: {date_str} ({days}d){urgency}")
+            else:
+                lines.append(f"• {label}: {date_str}")
+        lines.append("")
+
+    flags = extraction.get("red_flags", [])
+    if flags:
+        lines.append(f"*{h['flags']}*")
+        for f in flags[:3]:
+            sev = f.get("severity", "medium")
+            sev_emoji = "🔴" if sev == "high" else "🟡"
+            lines.append(f"{sev_emoji} {f.get('clause', '')}")
+        lines.append("")
+
+    actions = extraction.get("action_items", [])
+    if actions:
+        lines.append(f"*{h['actions']}*")
+        for a in actions[:3]:
+            lines.append(f"→ {a}")
+        lines.append("")
+
+    # Show category tag for receipts/bills
+    if transactions and len(transactions) == 1:
+        cat = transactions[0].get("category", "other")
+        lines.append(f"{h['processed']} · 🏷️ *{cat}*")
+    else:
+        lines.append(f"{h['processed']} · {emoji} *{type_label}*")
+
+    return "\n".join(lines)
+
+
+def _dup_reply(lang: str, existing_doc_type: str, uploaded_at: str, summary: str) -> str:
+    # Format the timestamp for display (show date only)
+    when = (uploaded_at or "").split(" ")[0] if uploaded_at else "earlier"
+    preview = (summary or "").strip()[:120]
+
+    templates = {
+        "en": (
+            "♻️ *Duplicate detected*\n\n"
+            "I already have this exact {type} (uploaded {when}).\n"
+            "No need to upload it again — it's already saved.\n\n"
+            "{preview}"
+        ),
+        "zh-tw": (
+            "♻️ *發現重複文件*\n\n"
+            "這份 {type} 已經存在（{when} 上傳）。\n"
+            "不需要再上傳 — 已經儲存了。\n\n"
+            "{preview}"
+        ),
+        "ja": (
+            "♻️ *重複を検出*\n\n"
+            "この{type}はすでに登録されています（{when}）。\n"
+            "再アップロードは不要です。\n\n"
+            "{preview}"
+        ),
+    }
+    tpl = templates.get(lang, templates["en"])
+    type_label = _DOC_TYPE_LABELS.get(lang, _DOC_TYPE_LABELS["en"]).get(
+        existing_doc_type, existing_doc_type
+    )
+    return tpl.replace("{type}", type_label).replace("{when}", when).replace("{preview}", preview)
+
+
+def _error_reply(lang: str, detail: str) -> str:
+    templates = {
+        "en": f"❌ Could not process document: {detail[:120]}",
+        "zh-tw": f"❌ 無法處理文件: {detail[:120]}",
+        "ja": f"❌ 書類を処理できませんでした: {detail[:120]}",
+    }
+    return templates.get(lang, templates["en"])
+
+
+def _format_doc_md_entry(filename: str, doc_type: str, extraction: dict,
+                          transactions: list) -> str:
+    """Format a single document entry for context/documents.md (Claude's view)."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    lines = [f"## {filename} — {doc_type} — {today}"]
+
+    summary = extraction.get("summary", "")
+    if summary:
+        lines.append("")
+        lines.append(summary)
+
+    if transactions:
+        currency = extraction.get("currency") or "HKD"
+        lines.append("")
+        for t in transactions[:10]:
+            amt = abs(float(t.get("amount", 0) or 0))
+            lines.append(
+                f"- {t.get('date', '')}: {t.get('merchant', '')} — "
+                f"{currency} {amt:,.2f} _({t.get('category', 'other')})_"
             )
 
-            if not result.get("success"):
-                err_msgs = {
-                    "en": f"❌ Could not read document: {result.get('error', 'unknown error')}",
-                    "zh-tw": f"❌ 無法讀取文件: {result.get('error', '未知錯誤')}",
-                    "ja": f"❌ 書類を読み取れませんでした: {result.get('error', '不明なエラー')}",
-                }
-                return err_msgs.get(lang, err_msgs["en"])
+    dates = extraction.get("important_dates", [])
+    if dates:
+        lines.append("")
+        lines.append("**Important dates:**")
+        for d in dates[:5]:
+            lines.append(f"- {d.get('date', '')}: {d.get('label', '')}")
 
-            extractions = result.get("extractions", [])
-            if not extractions:
-                empty_msgs = {
-                    "en": "📄 Document read — no key information found.",
-                    "zh-tw": "📄 文件已讀取 — 未找到關鍵資訊。",
-                    "ja": "📄 書類を読み取りました — 重要な情報は見つかりませんでした。",
-                }
-                return empty_msgs.get(lang, empty_msgs["en"])
-
-            # Save to committed context directly (no staging)
-            # Format a nice summary for the user
-            saved_count = 0
-            for item in extractions:
-                category = item.get("category", "general")
-                content = item.get("content", "")
-                summary = item.get("summary", filename)
-
-                # Append to the appropriate context file
-                context_file = cm.CATEGORY_MAP.get(category, "documents.md")
-                context_path = cm._root / "context" / context_file
-                if context_path.exists():
-                    existing = context_path.read_text(encoding="utf-8")
-                    new_content = existing.rstrip() + f"\n\n## {summary}\n\n{content}\n"
-                    context_path.write_text(new_content, encoding="utf-8")
-                    saved_count += 1
-
-            # Format reply in user's language
-            first = extractions[0]
-            reply_lines = []
-
-            if lang == "zh-tw":
-                reply_lines.append("📄 *文件已分析*\n")
-                reply_lines.append(f"📝 {first.get('summary', filename)}")
-                if first.get("content"):
-                    preview = first["content"][:500]
-                    reply_lines.append(f"\n{preview}")
-                reply_lines.append(f"\n✅ 已儲存到 *{category}*")
-            elif lang == "ja":
-                reply_lines.append("📄 *書類を分析しました*\n")
-                reply_lines.append(f"📝 {first.get('summary', filename)}")
-                if first.get("content"):
-                    preview = first["content"][:500]
-                    reply_lines.append(f"\n{preview}")
-                reply_lines.append(f"\n✅ *{category}* に保存しました")
-            else:
-                reply_lines.append("📄 *Document analyzed*\n")
-                reply_lines.append(f"📝 {first.get('summary', filename)}")
-                if first.get("content"):
-                    preview = first["content"][:500]
-                    reply_lines.append(f"\n{preview}")
-                reply_lines.append(f"\n✅ Saved to *{category}*")
-
-            return "\n".join(reply_lines)
-
-        finally:
-            if tmp_path.exists():
-                os.unlink(tmp_path)
-
-    except Exception as e:
-        log_msgs = {
-            "en": f"❌ Error processing document: {str(e)[:100]}",
-            "zh-tw": f"❌ 處理文件時發生錯誤: {str(e)[:100]}",
-            "ja": f"❌ 書類処理エラー: {str(e)[:100]}",
-        }
-        return log_msgs.get(lang, log_msgs["en"])
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -709,6 +1075,9 @@ _ONBOARDING_MESSAGES = {
             "⚠️ You sent {count} names, but I can only add up to 7 people.\n\n"
             "Please send a shorter list (up to 7 names, one per line)."
         ),
+        "dup_note": (
+            "ℹ️ I noticed duplicate names and kept only one of each: *{dups}*"
+        ),
         "complete": (
             "🎉 *You're all set!*\n\n"
             "🧠 Your AI brain is ready.\n\n"
@@ -790,6 +1159,9 @@ _ONBOARDING_MESSAGES = {
             "⚠️ 你輸入了 {count} 個名字，最多只能加入 7 人。\n\n"
             "請傳送較短的名單（最多 7 人，每行一個）。"
         ),
+        "dup_note": (
+            "ℹ️ 我發現有重複的名字，每個只保留一個：*{dups}*"
+        ),
         "complete": (
             "🎉 *設定完成！*\n\n"
             "🧠 你的AI大腦已就緒。\n\n"
@@ -870,6 +1242,9 @@ _ONBOARDING_MESSAGES = {
         "too_many": (
             "⚠️ {count} 人の名前が送られましたが、最大 7 人までです。\n\n"
             "短いリストを送ってください（最大 7 人、1行に1人）。"
+        ),
+        "dup_note": (
+            "ℹ️ 重複した名前が見つかりました。それぞれ1つだけ残しました：*{dups}*"
         ),
         "complete": (
             "🎉 *設定完了！*\n\n"
@@ -1059,13 +1434,25 @@ def _onboarding_step(user_id: str, message: str, cm, first_name: str = "") -> st
             msg,
             flags=re.IGNORECASE,
         )
-        names = []
+        raw_names = []
         for line in raw_lines:
             name = line.strip()
             if name and len(name) < 60:  # Sanity limit
+                raw_names.append(name)
+
+        # Dedup case-insensitively, preserving first-seen order
+        seen = set()
+        names = []
+        dropped_duplicates = []
+        for name in raw_names:
+            key = name.lower()
+            if key in seen:
+                dropped_duplicates.append(name)
+            else:
+                seen.add(key)
                 names.append(name)
 
-        # REJECT if too many — show warning, don't advance
+        # REJECT if too many (count deduped names) — show warning, don't advance
         if len(names) > MAX_FAMILY_MEMBERS:
             return msgs["too_many"].replace("{count}", str(len(names)))
 
@@ -1073,6 +1460,14 @@ def _onboarding_step(user_id: str, message: str, cm, first_name: str = "") -> st
             state["family_members"] = [{"name": n} for n in names]
             member_list = "、".join(names) if lang != "en" else ", ".join(names)
             confirm = msgs["household_confirm"].replace("{members}", member_list)
+
+            # Add a note if we dropped duplicates
+            if dropped_duplicates:
+                dup_list = ", ".join(dropped_duplicates)
+                dup_note = msgs.get("dup_note", "").replace("{dups}", dup_list)
+                if dup_note:
+                    confirm = dup_note + "\n\n" + confirm
+
             complete = _complete_onboarding(user_id, state, cm, msgs)
             return confirm + "\n\n" + complete
         else:
@@ -1083,17 +1478,17 @@ def _onboarding_step(user_id: str, message: str, cm, first_name: str = "") -> st
 
 
 def _complete_onboarding(user_id: str, state: dict, cm, msgs: dict) -> str:
-    """Mark onboarding as complete and write family members to context directly."""
+    """Mark onboarding as complete and write family members to context + SQL."""
     import os
 
     state["step"] = "complete"
     state["completed"] = True
     _save_onboarding_state(user_id, state, cm)
 
-    # Write family members directly to context/family.md (no staging)
     family = state.get("family_members", [])
     first_name = state.get("first_name", "")
 
+    # 1. Write to family.md (human-readable + Claude's context)
     try:
         family_path = cm._root / "context" / "family.md"
         if family_path.exists():
@@ -1108,7 +1503,17 @@ def _complete_onboarding(user_id: str, state: dict, cm, msgs: dict) -> str:
                 lines.append("")
             family_path.write_text("\n".join(lines), encoding="utf-8")
     except Exception:
-        pass  # Don't fail onboarding if write fails
+        pass
+
+    # 2. Write to SQL database (for auto-tagging documents by name)
+    try:
+        db = _get_db()
+        if first_name:
+            db.sync_family_member(cm, first_name, is_primary=True)
+        for m in family:
+            db.sync_family_member(cm, m["name"], is_primary=False)
+    except Exception as e:
+        log.warning(f"Could not sync family members to SQL: {e}")
 
     return msgs["complete"]
 

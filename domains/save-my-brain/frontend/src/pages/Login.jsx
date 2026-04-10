@@ -4,17 +4,43 @@ import { useTranslation } from "../i18n";
 import { login } from "../auth";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8091";
+
 export default function Login() {
   const { t, lang, setLang } = useTranslation();
   const navigate = useNavigate();
   const [name, setName] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
-    // Simple login — just store name as token for now
-    // Future: Supabase Auth or Telegram-generated token
-    login(name || "user", { name: name || "User", lang, onboarding_complete: false });
-    navigate("/onboarding");
+    setLoading(true);
+
+    // Check the server — has someone already been onboarded in this deployment?
+    let onboardingDone = false;
+    let primaryUser = null;
+    try {
+      const resp = await fetch(`${API_URL}/api/onboarding_status`);
+      if (resp.ok) {
+        const data = await resp.json();
+        onboardingDone = !!data.completed;
+        primaryUser = data.primary_user;
+      }
+    } catch (err) {
+      // API unreachable — proceed to onboarding as fallback
+      console.warn("onboarding_status check failed:", err);
+    }
+
+    // If already onboarded, adopt the primary user and skip onboarding
+    const displayName = primaryUser || name || "User";
+    login(displayName, {
+      name: displayName,
+      lang,
+      onboarding_complete: onboardingDone,
+    });
+
+    setLoading(false);
+    navigate(onboardingDone ? "/dashboard" : "/onboarding");
   }
 
   return (
@@ -44,8 +70,13 @@ export default function Login() {
             style={{ width: "100%", marginBottom: "16px" }}
           />
 
-          <button type="submit" className="btn btn-primary" style={{ width: "100%" }}>
-            {t("nav.login")}
+          <button
+            type="submit"
+            className="btn btn-primary"
+            style={{ width: "100%", opacity: loading ? 0.6 : 1 }}
+            disabled={loading}
+          >
+            {loading ? (t("common.loading") || "…") : t("nav.login")}
           </button>
         </form>
 

@@ -170,6 +170,72 @@ class TestCollectingFamily:
         assert "comma" in reply.lower() or "names" in reply.lower()
         assert "all set" not in reply.lower()
 
+    def test_duplicate_names_deduped_with_notice(self, tools_module, mock_cm, deploy_env):
+        """REGRESSION: 'Sam, Sam, Jen' must dedup to 'Sam, Jen' with a notice."""
+        self._advance_to_family_input(tools_module, mock_cm, "f7")
+        reply = tools_module._onboarding_step(
+            "f7", "Sam, Sam, Jen", mock_cm, first_name="Ada",
+        )
+        # Should show a dedup notice (ℹ️ emoji or "duplicate")
+        assert "ℹ️" in reply or "duplicate" in reply.lower()
+        # Should still complete — just with deduped list
+        assert "all set" in reply.lower()
+
+        # Verify family.md has Sam + Jen (not Sam + Sam + Jen)
+        family_md = (deploy_env / "context" / "family.md").read_text()
+        # Count occurrences of "## Sam" headings
+        sam_count = family_md.count("## Sam")
+        assert sam_count == 1
+        assert "## Jen" in family_md
+
+    def test_duplicate_case_insensitive_dedup(self, tools_module, mock_cm, deploy_env):
+        """'Sam, sam, SAM' should become just one 'Sam'."""
+        self._advance_to_family_input(tools_module, mock_cm, "f8")
+        reply = tools_module._onboarding_step(
+            "f8", "Sam, sam, SAM, Jen", mock_cm, first_name="Ada",
+        )
+        assert "all set" in reply.lower()
+
+        # Verify family.md — only one Sam (the first one seen)
+        family_md = (deploy_env / "context" / "family.md").read_text()
+        assert family_md.count("## Sam") == 1
+        # The lowercase variants should NOT appear as separate entries
+        assert "## sam\n" not in family_md
+        assert "## SAM\n" not in family_md
+
+    def test_no_dup_notice_when_no_duplicates(self, tools_module, mock_cm, deploy_env):
+        """Don't show the dedup notice unless there actually were duplicates."""
+        self._advance_to_family_input(tools_module, mock_cm, "f9")
+        reply = tools_module._onboarding_step(
+            "f9", "Sam, Jen, Bob", mock_cm, first_name="Ada",
+        )
+        # No duplicate notice expected
+        assert "ℹ️" not in reply
+        assert "duplicate" not in reply.lower()
+        assert "all set" in reply.lower()
+
+    def test_duplicates_count_towards_limit_check_after_dedup(self, tools_module, mock_cm, deploy_env):
+        """8 names with one duplicate = 7 unique = should succeed."""
+        self._advance_to_family_input(tools_module, mock_cm, "f10")
+        reply = tools_module._onboarding_step(
+            "f10", "Sam, Sam, Jen, Bob, Alice, Tom, Mike, Sue",
+            mock_cm, first_name="Ada",
+        )
+        # 8 raw → 7 unique → should succeed
+        assert "all set" in reply.lower()
+        assert "⚠️" not in reply  # no too_many warning
+
+    def test_too_many_uniques_still_rejects(self, tools_module, mock_cm, deploy_env):
+        """8 unique names (no dups) must still be rejected."""
+        self._advance_to_family_input(tools_module, mock_cm, "f11")
+        reply = tools_module._onboarding_step(
+            "f11", "Sam, Jen, Bob, Alice, Tom, Mike, Sue, Pat",
+            mock_cm, first_name="Ada",
+        )
+        assert "⚠️" in reply
+        assert "8" in reply  # count shown
+        assert "all set" not in reply.lower()
+
 
 # ---------------------------------------------------------------------------
 # Completion state + file writes
