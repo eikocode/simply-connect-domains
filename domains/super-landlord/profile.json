@@ -16,6 +16,7 @@
     "personal-info.md": {"category": "tenants",     "description": "Tenant management preferences"},
     "current-data.md":  {"category": "utilities",   "description": "Current utility rates and accounts"}
   },
+  "capture_roles": ["operator"],
   "starter_prompts": {
     "operator": [
       "Generate a debit note for Unit A for its share of the latest utility bill.",

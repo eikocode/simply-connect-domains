@@ -17,7 +17,8 @@
     "strategy.md":      {"category": "compliance",  "description": "Patent strategy and IP protection priorities"},
     "current-data.md":  {"category": "contracts",   "description": "Active contracts, pipeline, pending deals"}
   },
-  "extensions": [],
+  "extensions": ["legal-contracts"],
+  "capture_roles": ["operator", "counsel", "reviewer", "compliance", "business"],
   "starter_prompts": {
     "operator": [
       "Review Contract-PDF-Samples/contract1_hardware_supplier_agreement.md for high-risk clauses.",
@@ -50,19 +51,43 @@
     },
     "counsel": {
       "agent_md": "roles/counsel/AGENT.md",
-      "context_filter": ["contracts", "clause_library", "counterparties", "compliance", "products"]
+      "context_filter": ["contracts", "clause_library", "counterparties", "compliance", "products"],
+      "trust_weight": 0.9
     },
     "reviewer": {
       "agent_md": "roles/reviewer/AGENT.md",
-      "context_filter": ["contracts", "clause_library", "counterparties", "compliance", "products"]
+      "context_filter": ["contracts", "clause_library", "counterparties", "compliance", "products"],
+      "trust_weight": 0.85
     },
     "compliance": {
       "agent_md": "roles/compliance/AGENT.md",
-      "context_filter": ["contracts", "compliance", "products"]
+      "context_filter": ["contracts", "compliance", "products"],
+      "trust_weight": 0.95
     },
     "business": {
       "agent_md": "roles/business/AGENT.md",
-      "context_filter": ["contracts", "counterparties", "products"]
+      "context_filter": ["contracts", "counterparties", "products"],
+      "trust_weight": 0.7
+    }
+  },
+  "domain_roles": {
+    "roles": ["counsel", "reviewer", "compliance", "business"],
+    "default_write_to": "session",
+    "promotion_criteria": {
+      "reviewer": {
+        "severity_threshold": "high",
+        "require_remediation": true
+      },
+      "counsel": {
+        "require_clause_review": true,
+        "require_counterparty_check": true
+      },
+      "compliance": {
+        "require_regulatory_ref": true
+      },
+      "business": {
+        "require_summary": true
+      }
     }
   }
 }

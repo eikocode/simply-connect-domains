@@ -16,17 +16,10 @@
     "personal-info.md": {"category": "operations",  "description": "Operational preferences and SOPs"},
     "current-data.md":  {"category": "pricing",     "description": "Current pricing and revenue targets"}
   },
-  "capture_roles": ["operator", "host", "housekeeping", "maintenance", "finance"],
+  "capture_roles": ["operator", "housekeeping", "maintenance", "finance"],
   "extensions": ["minpaku"],
   "starter_prompts": {
     "operator": [
-      "Show all properties.",
-      "Show all listings.",
-      "Prepare a listing draft for Unit B.",
-      "Publish the latest listing draft.",
-      "Show bookings needing payment confirmation."
-    ],
-    "host": [
       "Show all properties.",
       "Show all listings.",
       "Prepare a listing draft for Unit B.",
@@ -36,11 +29,6 @@
   },
   "roles": {
     "operator": {
-      "agent_md": "roles/operator/AGENT.md",
-      "context_filter": ["properties", "operations", "pricing", "contacts"],
-      "telegram_bot_env": "MINPAKU_OPERATOR_BOT_TOKEN"
-    },
-    "host": {
       "agent_md": "roles/operator/AGENT.md",
       "context_filter": ["properties", "operations", "pricing", "contacts"],
       "telegram_bot_env": "MINPAKU_HOST_BOT_TOKEN"

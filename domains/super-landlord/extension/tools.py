@@ -1318,7 +1318,7 @@ def dispatch(name: str, args: dict, cm) -> str:
 def maybe_handle_message(message: str, cm, role_name: str = "operator", history: list[dict] | None = None) -> str | None:
     """Deterministically handle obvious Minpaku handoff commands.
 
-    This avoids depending on model tool choice for simple landlord intent updates.
+    This avoids depending on model tool choice for simple operator intent updates.
     """
     if role_name != "operator":
         return None

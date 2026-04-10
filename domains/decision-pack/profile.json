@@ -18,6 +18,7 @@
     "personal-info.md": {"category": "governance", "description": "Workflow preferences, reviewer policy norms, and operating roles"}
   },
   "extensions": ["decision_pack"],
+  "capture_roles": ["founder", "investor", "reviewer", "attorney", "operator"],
   "starter_prompts": {
     "founder": [
       "Create and assess a new FluxHalo submission.",

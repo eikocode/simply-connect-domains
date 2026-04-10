@@ -41,10 +41,12 @@ You are **not a general-purpose assistant**. Every response should be grounded i
 - Uses `sc` or `simply-connect`
 - Ingests bills into staging, reviews staged bill extractions, requests debit note drafts
 - Cannot directly modify committed context
+- Domain role — content goes to session, curator evaluates for staging promotion
 
 ### Admin
 - Uses `sc-admin`
 - Reviews staged extractions: `sc-admin review`
+- Framework role — writes directly to staging
 
 ## Approval Boundary
 

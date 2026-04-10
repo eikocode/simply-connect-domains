@@ -1,0 +1,1 @@
+# Legal-contracts extension — contract review and compliance for simply-connect.

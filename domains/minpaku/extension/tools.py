@@ -13,8 +13,8 @@ from typing import Any
 from .client import MinpakuClient
 
 
-def _is_operator_role(role_name: str) -> bool:
-    return role_name in {"operator", "host"}
+def _is_host_role(role_name: str) -> bool:
+    return role_name in {"host", "operator"}  # "operator" kept for backward compat
 
 TOOLS = [
     {
@@ -500,7 +500,7 @@ def _format_booking_confirmation_result(result: dict[str, Any], booking_id: str)
 
 
 def maybe_handle_message(message: str, cm, role_name: str = "operator") -> str | None:
-    if not _is_operator_role(role_name):
+    if not _is_host_role(role_name):
         return None
     text = " ".join(message.strip().split())
     lowered = text.lower()
