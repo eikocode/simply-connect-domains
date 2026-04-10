@@ -281,3 +281,62 @@ def maybe_handle_message(
     # No deterministic handlers for now — let Claude handle everything
     # Can add fast-path commands here later (e.g., "tasks", "deadlines")
     return None
+
+
+# ---------------------------------------------------------------------------
+# Billing Gate (for future use)
+# ---------------------------------------------------------------------------
+
+def check_billing(telegram_user_id: str, data_dir: str | None = None) -> dict:
+    """
+    Check if a user has an active plan.
+
+    Returns:
+        {"allowed": True/False, "plan": "trial|annual|lifetime", "message": "..."}
+
+    Plans are stored in data/plans.json. If no entry exists for the user,
+    they get a 14-day trial with 5 document limit.
+
+    Currently NOT enforced — returns allowed=True for all users.
+    To activate, integrate into relay.py's message handler.
+    """
+    import os
+    from pathlib import Path
+    from datetime import datetime, timedelta
+
+    plans_path = Path(data_dir or os.getenv("SC_DATA_DIR", ".")) / "data" / "plans.json"
+
+    if not plans_path.exists():
+        return {"allowed": True, "plan": "trial", "message": "No billing configured"}
+
+    try:
+        plans = json.loads(plans_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {"allowed": True, "plan": "trial", "message": "Plans file unreadable"}
+
+    user_key = f"telegram_{telegram_user_id}"
+    user_plan = plans.get("users", {}).get(user_key)
+
+    if not user_plan:
+        # New user — auto-create trial
+        return {"allowed": True, "plan": "trial", "message": "Free trial active"}
+
+    plan_type = user_plan.get("plan", "trial")
+    expires = user_plan.get("expires")
+
+    if plan_type == "lifetime":
+        return {"allowed": True, "plan": "lifetime", "message": "Lifetime plan"}
+
+    if expires:
+        try:
+            exp_date = datetime.fromisoformat(expires)
+            if datetime.now() > exp_date:
+                return {
+                    "allowed": False,
+                    "plan": plan_type,
+                    "message": "Plan expired. Subscribe at savemybrain.ai",
+                }
+        except ValueError:
+            pass
+
+    return {"allowed": True, "plan": plan_type, "message": f"{plan_type} plan active"}
