@@ -54,6 +54,26 @@
       { "name": "Lifetime", "price": "US$200", "period": "one-time", "features": ["Unlimited forever", "All features", "Up to 5 family members", "Priority support", "Early access to new features"] }
     ]
   },
+  "onboarding": {
+    "consent_title": "Welcome to Save My Brain",
+    "consent_intro": "I'm your household document assistant. Upload any document — I'll organize it and remember everything.",
+    "privacy_title": "Privacy",
+    "privacy_body": "Documents are processed then deleted. No selling your data, no AI training.",
+    "consent_agree": "I agree",
+    "consent_decline": "No thanks",
+    "household_title": "Who do you manage documents for?",
+    "household_solo": "Just me",
+    "household_family": "Me + family",
+    "family_title": "Who's in your household?",
+    "family_hint": "Separate each name with a comma. Up to 7 people.",
+    "family_label": "Names (separated by commas)",
+    "family_note": "You can add or delete anytime — just tell me.",
+    "family_continue": "Continue →",
+    "family_too_many": "You entered {count} names, but I can only add up to 7 people. Please shorten the list.",
+    "complete_title": "You're all set!",
+    "complete_body": "Your AI brain is ready. Start uploading documents — I'll handle the paperwork.",
+    "complete_redirect": "Redirecting to your dashboard..."
+  },
   "dashboard": {
     "welcome": "Welcome back",
     "documents": "Documents",

@@ -13,8 +13,8 @@ export default function Login() {
     e.preventDefault();
     // Simple login — just store name as token for now
     // Future: Supabase Auth or Telegram-generated token
-    login(name || "user", { name: name || "User", lang });
-    navigate("/dashboard");
+    login(name || "user", { name: name || "User", lang, onboarding_complete: false });
+    navigate("/onboarding");
   }
 
   return (

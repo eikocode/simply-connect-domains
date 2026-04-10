@@ -54,6 +54,26 @@
       { "name": "終身", "price": "US$200", "period": "一次性", "features": ["永久無限使用", "所有功能", "最多5位家庭成員", "優先支援", "搶先體驗新功能"] }
     ]
   },
+  "onboarding": {
+    "consent_title": "歡迎使用拯救腦細胞",
+    "consent_intro": "我是你的家庭文件助手。上傳任何文件 — 我會整理並記住一切。",
+    "privacy_title": "隱私",
+    "privacy_body": "文件處理後即刪除。不出售資料、不用於AI訓練。",
+    "consent_agree": "我同意",
+    "consent_decline": "不用了",
+    "household_title": "你需要管理誰的文件？",
+    "household_solo": "只有我自己",
+    "household_family": "我和家人",
+    "family_title": "你家裡有誰？",
+    "family_hint": "請用逗號分隔每個名字。最多7人。",
+    "family_label": "名字（用逗號分隔）",
+    "family_note": "你隨時可以告訴我新增或刪除。",
+    "family_continue": "繼續 →",
+    "family_too_many": "你輸入了 {count} 個名字，最多只能加入 7 人。請縮短名單。",
+    "complete_title": "設定完成！",
+    "complete_body": "你的AI大腦已就緒。開始上傳文件 — 我會幫你處理。",
+    "complete_redirect": "正在前往你的控制台..."
+  },
   "dashboard": {
     "welcome": "歡迎回來",
     "documents": "文件",

@@ -1,89 +1,88 @@
 /**
- * MCP Client — talks to simply-connect MCP server via JSON-RPC over HTTP.
+ * Web API Client — talks to the save-my-brain web API.
  *
- * In dev: Vite proxies /mcp → localhost:3004
- * In prod: Configure VITE_MCP_URL or reverse proxy
+ * Simple REST wrapper around the extension tools (not full MCP protocol).
+ * The web API runs on port 8091 and wraps the same dispatch() function
+ * that MCP uses internally.
+ *
+ * Endpoints:
+ *   GET  /api/health              — health check
+ *   GET  /api/context             — all context files
+ *   GET  /api/context/{category}  — one context file
+ *   POST /api/tool/{name}         — call a tool with JSON args
+ *   GET  /api/tools               — list all tools
  */
 
-const MCP_URL = import.meta.env.VITE_MCP_URL || "";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8091";
 
-async function mcpCall(toolName, args = {}) {
-  const resp = await fetch(`${MCP_URL}/mcp/messages/`, {
+async function callTool(toolName, args = {}) {
+  const resp = await fetch(`${API_URL}/api/tool/${toolName}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: Date.now(),
-      method: "tools/call",
-      params: { name: toolName, arguments: args },
-    }),
+    body: JSON.stringify(args),
   });
 
   if (!resp.ok) {
-    throw new Error(`MCP call failed: ${resp.status} ${resp.statusText}`);
+    const errText = await resp.text().catch(() => resp.statusText);
+    throw new Error(`API call failed (${resp.status}): ${errText}`);
   }
 
   const data = await resp.json();
-
-  if (data.error) {
-    throw new Error(data.error.message || "MCP error");
+  if (!data.success) {
+    throw new Error(data.error || "Tool call failed");
   }
-
-  // Parse the tool result — MCP returns { result: { content: [{ text: "..." }] } }
-  const text = data.result?.content?.[0]?.text || "{}";
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { raw: text };
-  }
+  return data.result;
 }
 
 // ---------------------------------------------------------------------------
-// Domain tools (from save-my-brain extension)
+// Domain tools
 // ---------------------------------------------------------------------------
 
 export const searchDocuments = (query, docType) =>
-  mcpCall("search_documents", { query, doc_type: docType });
+  callTool("search_documents", { query, doc_type: docType });
 
 export const listTasks = (status = "pending") =>
-  mcpCall("list_tasks", { status });
+  callTool("list_tasks", { status });
 
 export const listExpiryDates = (daysAhead = 90) =>
-  mcpCall("list_expiry_dates", { days_ahead: daysAhead });
+  callTool("list_expiry_dates", { days_ahead: daysAhead });
 
 export const getFinancialSummary = (period = "this_month") =>
-  mcpCall("get_financial_summary", { period });
+  callTool("get_financial_summary", { period });
 
 export const listFamilyMembers = () =>
-  mcpCall("list_family_members", {});
+  callTool("list_family_members", {});
+
+export const addFamilyMember = (name) =>
+  callTool("add_family_member", { name });
+
+export const removeFamilyMember = (name) =>
+  callTool("remove_family_member", { name });
+
+export const renameFamilyMember = (oldName, newName) =>
+  callTool("rename_family_member", { old_name: oldName, new_name: newName });
 
 // ---------------------------------------------------------------------------
-// Context tools (from simply-connect core)
+// Context files
 // ---------------------------------------------------------------------------
 
-export const getContext = (category) =>
-  mcpCall("get_committed_context", category ? { category } : {});
-
-export const captureToStaging = (summary, content, category) =>
-  mcpCall("capture_to_staging", { summary, content, category });
+export async function getContext(category) {
+  const url = category ? `${API_URL}/api/context/${category}` : `${API_URL}/api/context`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`Context fetch failed: ${resp.status}`);
+  return resp.json();
+}
 
 // ---------------------------------------------------------------------------
 // Health check
 // ---------------------------------------------------------------------------
 
-export async function checkMcpHealth() {
+export async function checkHealth() {
   try {
-    const resp = await fetch(`${MCP_URL}/mcp/messages/`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/list",
-        params: {},
-      }),
-    });
-    return resp.ok;
+    const resp = await fetch(`${API_URL}/api/health`);
+    if (!resp.ok) return false;
+    const data = await resp.json();
+    return data.status === "ok";
   } catch {
     return false;
   }

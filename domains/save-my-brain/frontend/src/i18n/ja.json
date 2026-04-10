@@ -54,6 +54,26 @@
       { "name": "ライフタイム", "price": "US$200", "period": "一回払い", "features": ["永久無制限", "全機能", "最大5名の家族メンバー", "優先サポート", "新機能への早期アクセス"] }
     ]
   },
+  "onboarding": {
+    "consent_title": "脳細胞救済へようこそ",
+    "consent_intro": "家庭の書類管理アシスタントです。どんな書類でもアップロード — 整理して全て記憶します。",
+    "privacy_title": "プライバシー",
+    "privacy_body": "書類は処理後に削除されます。データの販売やAI訓練への使用はありません。",
+    "consent_agree": "同意します",
+    "consent_decline": "いいえ",
+    "household_title": "誰の書類を管理しますか？",
+    "household_solo": "自分だけ",
+    "household_family": "自分と家族",
+    "family_title": "ご家族の名前を教えてください",
+    "family_hint": "名前をカンマで区切ってください。最大7人。",
+    "family_label": "名前（カンマ区切り）",
+    "family_note": "いつでも追加や削除をお伝えください。",
+    "family_continue": "続ける →",
+    "family_too_many": "{count} 人の名前が入力されましたが、最大 7 人までです。リストを短くしてください。",
+    "complete_title": "設定完了！",
+    "complete_body": "AIブレインの準備ができました。書類のアップロードを始めてください — 私が管理します。",
+    "complete_redirect": "ダッシュボードへ移動中..."
+  },
   "dashboard": {
     "welcome": "おかえりなさい",
     "documents": "書類",
