@@ -1,0 +1,35 @@
+{
+  "name": "Save My Brain",
+  "description": "Personal life admin assistant: process documents, track expiry dates, monitor finances, manage family tasks. Supports English, Traditional Chinese, and Japanese.",
+  "version": "1.0.0",
+  "context_files": ["documents", "finances", "insurance", "calendar", "family", "tasks"],
+  "category_map": {
+    "documents": "documents.md",
+    "finances": "finances.md",
+    "insurance": "insurance.md",
+    "calendar": "calendar.md",
+    "family": "family.md",
+    "tasks": "tasks.md",
+    "general": "documents.md"
+  },
+  "intake_sources": {
+    "business-info.md": {"category": "documents",  "description": "Overview of documents and admin processes"},
+    "personal-info.md": {"category": "family",      "description": "Family members and responsibilities"},
+    "current-data.md":  {"category": "finances",    "description": "Current financial overview and metrics"}
+  },
+  "capture_roles": ["operator"],
+  "starter_prompts": {
+    "operator": [
+      "What documents do I have on file?",
+      "Are there any expiry dates coming up in the next 30 days?",
+      "Show me a summary of my spending this month.",
+      "What tasks are outstanding?"
+    ]
+  },
+  "extensions": ["save-my-brain"],
+  "roles": {
+    "operator": {
+      "context_filter": ["documents", "finances", "insurance", "calendar", "family", "tasks"]
+    }
+  }
+}
