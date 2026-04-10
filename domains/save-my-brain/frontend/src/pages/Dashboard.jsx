@@ -50,7 +50,7 @@ export default function Dashboard() {
       {/* Top bar */}
       <nav style={{
         display: "flex", justifyContent: "space-between", alignItems: "center",
-        padding: "12px 24px", borderBottom: "1px solid var(--border)",
+        padding: "12px 24px", borderBottom: "1px solid var(--border-light)",
       }}>
         <span style={{ fontWeight: 700 }}>🧠 {t("app.name")}</span>
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
@@ -114,7 +114,7 @@ function TabContent({ tab, data, t }) {
       ) : (
         <ul style={{ listStyle: "none", padding: 0 }}>
           {data.tasks?.map((task, i) => (
-            <li key={i} style={{ padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+            <li key={i} style={{ padding: "8px 0", borderBottom: "1px solid var(--border-light)" }}>
               <span className={`badge badge-${task.priority === "P1" ? "danger" : task.priority === "P2" ? "warning" : "info"}`} style={{ marginRight: "8px" }}>
                 {task.priority}
               </span>
@@ -130,7 +130,7 @@ function TabContent({ tab, data, t }) {
       ) : (
         <ul style={{ listStyle: "none", padding: 0 }}>
           {data.dates?.map((d, i) => (
-            <li key={i} style={{ padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+            <li key={i} style={{ padding: "8px 0", borderBottom: "1px solid var(--border-light)" }}>
               <span className={`badge badge-${d.priority === "P1" ? "danger" : d.priority === "P2" ? "warning" : "info"}`} style={{ marginRight: "8px" }}>
                 {d.days_until}d
               </span>
@@ -179,7 +179,7 @@ function TabContent({ tab, data, t }) {
       ) : (
         <ul style={{ listStyle: "none", padding: 0 }}>
           {data.members?.map((m, i) => (
-            <li key={i} style={{ padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+            <li key={i} style={{ padding: "8px 0", borderBottom: "1px solid var(--border-light)" }}>
               👤 <strong>{m.name}</strong> {m.relationship && <span style={{ opacity: 0.5 }}>({m.relationship})</span>}
             </li>
           ))}

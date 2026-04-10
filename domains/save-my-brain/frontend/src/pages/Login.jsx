@@ -23,7 +23,7 @@ export default function Login() {
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      background: "var(--bg-base)",
+      background: "var(--bg-surface)",
       padding: "20px",
     }}>
       <div className="card" style={{ maxWidth: "400px", width: "100%", padding: "32px" }}>

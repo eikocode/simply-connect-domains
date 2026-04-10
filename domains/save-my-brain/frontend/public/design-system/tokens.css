@@ -1,87 +1,102 @@
-/* Save My Brain AI — Design Tokens
-   Import this file in index.html before any other CSS.
-   Never use hardcoded hex values in component files — always use var(--token). */
+/* Save My Brain — Design Tokens (Airbnb-inspired)
+   White canvas, warm tones, Rausch Red accent.
+   Never use hardcoded hex — always use var(--token). */
 
 :root {
-  /* ── Colours ──────────────────────────────────────────── */
-  --color-bg:          #0b1326;   /* deep navy — page background */
-  --color-surface:     #171f33;   /* surface container */
-  --color-surface-2:   #222a3d;   /* surface container high */
-  --color-surface-3:   #2d3449;   /* surface container highest */
-  --color-border:      #3e484f;   /* outline variant */
+  /* ── Brand ──────────────────────────────────────────── */
+  --brand: #ff385c;
+  --brand-dark: #e00b41;
+  --brand-light: #fff0f3;
 
-  --color-accent:      #7dd0ff;   /* sky blue — primary interactive */
-  --color-accent-dark: #38b2ea;   /* primary container / hover */
-  --color-accent-glow: rgba(125, 208, 255, 0.15); /* blue glow */
+  /* ── Text ───────────────────────────────────────────── */
+  --text-primary: #222222;
+  --text-secondary: #6a6a6a;
+  --text-tertiary: #929292;
+  --text-disabled: rgba(0, 0, 0, 0.24);
+  --text-on-brand: #ffffff;
+  --text-on-dark: #ffffff;
+  --text-link: #222222;
 
-  --color-success:     #10B981;   /* emerald — done, saved, ok */
-  --color-warning:     #F59E0B;   /* amber — attention, P2 tasks */
-  --color-danger:      #EF4444;   /* red — urgent, P1 tasks, errors */
-  --color-info:        #6366F1;   /* indigo — neutral info */
+  /* ── Surfaces ───────────────────────────────────────── */
+  --bg-base: #ffffff;
+  --bg-surface: #f7f7f7;
+  --bg-button: #f2f2f2;
+  --bg-card: #ffffff;
+  --bg-dark: #222222;
 
-  --color-text:        #dae2fd;   /* on-surface — primary text */
-  --color-text-muted:  #bdc8d0;   /* on-surface-variant — secondary text */
-  --color-text-faint:  #88929a;   /* outline — placeholders, disabled */
+  /* ── Borders ────────────────────────────────────────── */
+  --border: #dddddd;
+  --border-light: #ebebeb;
 
-  /* Priority colours */
-  --color-p1:          #EF4444;   /* urgent */
-  --color-p2:          #F59E0B;   /* high */
-  --color-p3:          #0EA5E9;   /* normal */
-  --color-p4:          #475569;   /* low */
+  /* ── Shadows (three-layer warm lift) ────────────────── */
+  --shadow-card: rgba(0,0,0,0.02) 0px 0px 0px 1px,
+                 rgba(0,0,0,0.04) 0px 2px 6px,
+                 rgba(0,0,0,0.1) 0px 4px 8px;
+  --shadow-hover: rgba(0,0,0,0.08) 0px 4px 12px;
+  --shadow-focus: 0 0 0 2px var(--brand);
 
-  /* ── Spacing scale ────────────────────────────────────── */
-  --sp-1:  4px;
-  --sp-2:  8px;
-  --sp-3:  12px;
-  --sp-4:  16px;
-  --sp-5:  20px;
-  --sp-6:  24px;
-  --sp-8:  32px;
+  /* ── Radius ─────────────────────────────────────────── */
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 32px;
+  --radius-full: 9999px;
+
+  /* ── Spacing (8px base) ─────────────────────────────── */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
   --sp-10: 40px;
   --sp-12: 48px;
   --sp-16: 64px;
 
-  /* ── Typography ───────────────────────────────────────── */
-  --font-sans: 'Inter', 'Noto Sans TC', 'Noto Sans JP', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  /* ── Typography ─────────────────────────────────────── */
+  --font-family: -apple-system, system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans TC', 'Noto Sans JP', sans-serif;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
 
-  --text-xs:   11px;
-  --text-sm:   13px;
-  --text-base: 15px;
-  --text-md:   17px;
-  --text-lg:   20px;
-  --text-xl:   24px;
-  --text-2xl:  30px;
-  --text-3xl:  38px;
+  /* ── Status ─────────────────────────────────────────── */
+  --success: #008a05;
+  --warning: #e07912;
+  --danger: #c13515;
+  --info: #428bff;
+}
 
-  --weight-normal:   400;
-  --weight-medium:   500;
-  --weight-semibold: 600;
-  --weight-bold:     700;
+/* ── Base Reset ──────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
 
-  --leading-tight:  1.2;
-  --leading-normal: 1.5;
-  --leading-loose:  1.75;
+body {
+  font-family: var(--font-family);
+  font-size: 14px;
+  font-weight: var(--fw-regular);
+  line-height: 1.43;
+  color: var(--text-primary);
+  background: var(--bg-base);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
 
-  /* ── Radii ────────────────────────────────────────────── */
-  --radius-sm:   6px;
-  --radius-md:   10px;
-  --radius-lg:   14px;
-  --radius-xl:   20px;
-  --radius-full: 9999px;
+a {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
 
-  /* ── Shadows ──────────────────────────────────────────── */
-  --shadow-sm:  0 1px 3px rgba(0,0,0,0.3);
-  --shadow-md:  0 4px 16px rgba(0,0,0,0.35);
-  --shadow-lg:  0 8px 32px rgba(0,0,0,0.4);
-  --shadow-accent: 0 0 0 3px var(--color-accent-glow);
+a:hover {
+  color: var(--brand);
+}
 
-  /* ── Transitions ──────────────────────────────────────── */
-  --transition-fast:   all 0.15s ease;
-  --transition-normal: all 0.25s ease;
-
-  /* ── Layout ───────────────────────────────────────────── */
-  --sidebar-width: 240px;
-  --header-height: 60px;
-  --content-max:   900px;
+::selection {
+  background: var(--brand-light);
+  color: var(--text-primary);
 }
