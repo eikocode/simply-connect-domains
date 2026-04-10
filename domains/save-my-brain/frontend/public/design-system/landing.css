@@ -101,7 +101,28 @@
   border-top: 1px solid var(--border-light);
 }
 
+/* ── Scroll Reveal Animation ─────────────────────────── */
+
+.animate-on-scroll {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+
+.animate-on-scroll.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 /* ── Responsive ──────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  /* Hero collapses to single column on tablet/mobile */
+  section > div[style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+    gap: 32px !important;
+  }
+}
 
 @media (max-width: 550px) {
   .landing-hero {

@@ -13,10 +13,23 @@
     "privacy": "隱私政策"
   },
   "landing": {
-    "hero_title": "別再被生活瑣事淹沒",
-    "hero_subtitle": "把任何文件發給你的AI助手。它會閱讀、整理、提醒你 — 支援中文、英文和日文。",
+    "pill": "文件管理",
+    "hero_title": "拯救腦細胞\n告別家庭文件煩惱",
+    "hero_subtitle": "生活瑣事不應該浪費你的腦細胞。",
+    "hero_sub": "上傳銀行對帳單、保險、帳單、收據。AI自動整理、追蹤截止日期、回答問題。",
+    "phone_caption": "用手機Telegram\n管理一切",
+    "qr_label": "用手機掃描",
     "cta_telegram": "在Telegram開始",
     "cta_login": "打開控制台",
+    "steps": [
+      { "title": "上傳", "desc": "將任何PDF、照片或截圖發送到Telegram。" },
+      { "title": "AI分析", "desc": "自動提取日期、金額、姓名和注意事項。" },
+      { "title": "隨時提問", "desc": "「媽媽的保險什麼時候到期？」— 即時回答。" }
+    ],
+    "secure_label": "加密 & 安全",
+    "social_proof": "加入 2,500+ 個家庭，更聰明地管理文件。",
+    "bottom_headline": "別再為瑣事浪費腦細胞",
+    "bottom_sub": "30秒開始整理。無需註冊。",
     "features_title": "拯救腦細胞能幫你做什麼",
     "features": [
       { "icon": "🧾", "title": "文件智能分析", "desc": "發送任何收據、帳單、合約或證件。AI自動提取重要資訊、標記注意事項、追蹤到期日。" },

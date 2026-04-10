@@ -13,10 +13,23 @@
     "privacy": "Privacy"
   },
   "landing": {
-    "hero_title": "Stop losing track of life admin",
-    "hero_subtitle": "Send any document to your AI assistant. It reads, organizes, and reminds you — in English, Chinese, or Japanese.",
-    "cta_telegram": "Start on Telegram",
+    "pill": "paperwork",
+    "hero_title": "Save your Brain from household paperwork",
+    "hero_subtitle": "Because life admin shouldn't cost you brain cells.",
+    "hero_sub": "Upload bank statements, insurance, bills, receipts. AI organizes, tracks deadlines, and answers questions — so you don't have to.",
+    "phone_caption": "Manage everything\nfrom your phone\nvia Telegram",
+    "qr_label": "Scan with your phone",
+    "cta_telegram": "Open on Telegram",
     "cta_login": "Open Dashboard",
+    "steps": [
+      { "title": "Upload", "desc": "Drop any PDF, photo, or screenshot into Telegram." },
+      { "title": "AI Reads", "desc": "Extracts dates, amounts, names, and red flags automatically." },
+      { "title": "Ask Anything", "desc": "\"When does Mom's insurance expire?\" — instant answer." }
+    ],
+    "secure_label": "Encrypted & Secure",
+    "social_proof": "Join 2,500+ households organizing smarter.",
+    "bottom_headline": "Stop losing brain cells to paperwork",
+    "bottom_sub": "Start organizing in 30 seconds. No signup required.",
     "features_title": "What Save My Brain does for you",
     "features": [
       { "icon": "🧾", "title": "Document Intelligence", "desc": "Send any receipt, bill, contract, or ID. AI extracts key details, flags red flags, tracks expiry dates." },
