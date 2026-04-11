@@ -88,7 +88,14 @@
     "no_finances": "尚無財務記錄。",
     "no_family": "尚未添加家庭成員。",
     "chat_placeholder": "問我任何關於你文件的問題...",
-    "upload_hint": "或在這裡上傳文件"
+    "upload_hint": "或在這裡上傳文件",
+    "chat_empty_title": "歡迎！開始整理你的大腦吧。",
+    "chat_empty_hint": "先上傳一份文件 — 帳單、收據、保單，或任何有重要資料的東西。",
+    "empty_cta_upload": "📎 上傳你的第一份文件",
+    "empty_example_title": "或試試這樣問：",
+    "empty_example_1": "我有什麼文件？",
+    "empty_example_2": "最近有什麼即將到期的日子？",
+    "empty_example_3": "這個月的消費摘要是什麼？"
   },
   "settings": {
     "title": "設定",
@@ -106,6 +113,7 @@
     "save": "儲存",
     "cancel": "取消",
     "back": "返回",
+    "send": "發送",
     "days_left": "天後到期",
     "overdue": "已過期",
     "powered_by": "由 Anthropic 的 Claude AI 驅動"

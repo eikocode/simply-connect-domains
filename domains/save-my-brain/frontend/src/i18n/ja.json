@@ -88,7 +88,14 @@
     "no_finances": "家計記録はまだありません。",
     "no_family": "家族メンバーはまだ追加されていません。",
     "chat_placeholder": "書類について何でも聞いてください...",
-    "upload_hint": "またはここに書類をアップロード"
+    "upload_hint": "またはここに書類をアップロード",
+    "chat_empty_title": "ようこそ！書類の整理を始めましょう。",
+    "chat_empty_hint": "まずは書類をアップロード — 請求書、レシート、保険証書など、大切な情報が含まれるものを。",
+    "empty_cta_upload": "📎 最初の書類をアップロード",
+    "empty_example_title": "こんな質問も試してみてください：",
+    "empty_example_1": "どんな書類を保存していますか？",
+    "empty_example_2": "近々期限が来るものはありますか？",
+    "empty_example_3": "今月の支出の内訳は？"
   },
   "settings": {
     "title": "設定",
@@ -106,6 +113,7 @@
     "save": "保存",
     "cancel": "キャンセル",
     "back": "戻る",
+    "send": "送信",
     "days_left": "日後に期限",
     "overdue": "期限切れ",
     "powered_by": "Anthropic Claude AI 搭載"

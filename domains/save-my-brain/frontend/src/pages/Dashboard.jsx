@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from "../i18n";
 import { getUser, logout } from "../auth";
 import {
@@ -15,6 +16,7 @@ const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8091";
 export default function Dashboard() {
   const { t, lang, setLang } = useTranslation();
   const user = getUser();
+  const navigate = useNavigate();
 
   // Chat state
   const [messages, setMessages] = useState([]);
@@ -75,8 +77,19 @@ export default function Dashboard() {
       const resp = await fetch(`${API_URL}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, user_id: user?.name || "web" }),
+        body: JSON.stringify({
+          message: text,
+          user_id: user?.name || "web",
+          first_name: user?.name || "",
+        }),
       });
+      // Gate: backend says onboarding not done → redirect
+      if (resp.status === 409) {
+        const data = await resp.json().catch(() => ({}));
+        const redirect = data?.detail?.redirect || "/onboarding";
+        navigate(redirect);
+        return;
+      }
       const data = await resp.json();
       if (data.success) {
         setMessages((m) => [...m, { role: "assistant", text: data.reply }]);
@@ -90,6 +103,10 @@ export default function Dashboard() {
       // Refresh active tab in case data changed
       loadTab(activeTab);
     }
+  }
+
+  function useExamplePrompt(prompt) {
+    setInput(prompt);
   }
 
   async function handleUpload(files) {
@@ -183,14 +200,62 @@ export default function Dashboard() {
             {/* Messages */}
             <div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
               {messages.length === 0 ? (
-                <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--text-secondary)" }}>
+                <div style={{ padding: "24px 20px", textAlign: "center" }}>
                   <div style={{ fontSize: "48px", marginBottom: "12px" }}>🧠</div>
-                  <p style={{ fontSize: "15px", marginBottom: "8px" }}>
-                    {t("dashboard.chat_empty_title") || "Ask me anything about your documents"}
+                  <h2 style={{ fontSize: "18px", fontWeight: 700, marginBottom: "8px" }}>
+                    {t("dashboard.chat_empty_title")}
+                  </h2>
+                  <p style={{ fontSize: "14px", color: "var(--text-secondary)", marginBottom: "20px", lineHeight: 1.5 }}>
+                    {t("dashboard.chat_empty_hint")}
                   </p>
-                  <p style={{ fontSize: "13px" }}>
-                    {t("dashboard.chat_empty_hint") || "Or drag & drop a file here to upload"}
-                  </p>
+
+                  {/* Primary CTA — upload your first document */}
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="btn btn-brand btn-lg"
+                    style={{ marginBottom: "20px", padding: "12px 24px" }}
+                  >
+                    {t("dashboard.empty_cta_upload")}
+                  </button>
+
+                  {/* Example prompts */}
+                  <div style={{ marginTop: "12px", textAlign: "left" }}>
+                    <p style={{
+                      fontSize: "12px",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.08em",
+                      color: "var(--text-tertiary)",
+                      fontWeight: 600,
+                      marginBottom: "8px",
+                      textAlign: "center",
+                    }}>
+                      {t("dashboard.empty_example_title")}
+                    </p>
+                    {[
+                      t("dashboard.empty_example_1"),
+                      t("dashboard.empty_example_2"),
+                      t("dashboard.empty_example_3"),
+                    ].map((ex, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => useExamplePrompt(ex)}
+                        className="btn btn-outline btn-sm"
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          textAlign: "left",
+                          padding: "10px 14px",
+                          marginBottom: "6px",
+                          fontSize: "13px",
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        💬 {ex}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               ) : (
                 messages.map((m, i) => (

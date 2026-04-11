@@ -88,7 +88,14 @@
     "no_finances": "No financial records yet.",
     "no_family": "No family members added yet.",
     "chat_placeholder": "Ask me anything about your documents...",
-    "upload_hint": "Or upload a document here"
+    "upload_hint": "Or upload a document here",
+    "chat_empty_title": "Welcome! Let's get your brain organized.",
+    "chat_empty_hint": "Start by uploading a document — a bill, receipt, insurance policy, or anything with important info.",
+    "empty_cta_upload": "📎 Upload your first document",
+    "empty_example_title": "Or try asking:",
+    "empty_example_1": "What documents do I have on file?",
+    "empty_example_2": "Are there any expiry dates coming up?",
+    "empty_example_3": "Show me a summary of my spending this month."
   },
   "settings": {
     "title": "Settings",
@@ -106,6 +113,7 @@
     "save": "Save",
     "cancel": "Cancel",
     "back": "Back",
+    "send": "Send",
     "days_left": "days left",
     "overdue": "Overdue",
     "powered_by": "Powered by Claude AI from Anthropic"

@@ -14,6 +14,7 @@ import { useTranslation } from "../i18n";
 import { getUser, login } from "../auth";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8091";
 const MAX_FAMILY_MEMBERS = 7;
 
 export default function Onboarding() {
@@ -26,6 +27,8 @@ export default function Onboarding() {
   const [familyText, setFamilyText] = useState("");
   const [familyNames, setFamilyNames] = useState([]);
   const [familyError, setFamilyError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
 
   // Example names per language (one per line — web supports newlines)
   const exampleNames = {
@@ -45,7 +48,7 @@ export default function Onboarding() {
   function handleHousehold(mode) {
     setHouseholdMode(mode);
     if (mode === "solo") {
-      completeOnboarding([]);
+      completeOnboarding([], "solo");
     } else {
       setStep("family");
     }
@@ -102,15 +105,44 @@ export default function Onboarding() {
     }
 
     setFamilyNames(unique);
-    completeOnboarding(unique);
+    completeOnboarding(unique, "family");
   }
 
-  function completeOnboarding(names) {
-    // Mark onboarding as complete in localStorage
-    const updatedUser = { ...user, onboarding_complete: true, family: names };
-    login(localStorage.getItem("smb_token") || "user", updatedUser);
-    setStep("complete");
-    setTimeout(() => navigate("/dashboard"), 2000);
+  async function completeOnboarding(names, mode) {
+    setSubmitting(true);
+    setSubmitError("");
+
+    const userId = user?.name || localStorage.getItem("smb_token") || "user";
+    const payload = {
+      user_id: userId,
+      name: user?.name || userId,
+      household_mode: mode || householdMode || "solo",
+      family_members: names,
+      language: lang,
+    };
+
+    try {
+      const resp = await fetch(`${API_URL}/api/onboarding_complete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!resp.ok) {
+        const detail = await resp.text().catch(() => "");
+        throw new Error(detail || `Backend returned ${resp.status}`);
+      }
+      // Success — update localStorage so ProtectedRoute lets us through
+      const updatedUser = { ...user, onboarding_complete: true, family: names };
+      login(localStorage.getItem("smb_token") || userId, updatedUser);
+      setStep("complete");
+      setTimeout(() => navigate("/dashboard"), 1500);
+    } catch (err) {
+      console.error("Onboarding completion failed:", err);
+      setSubmitError(
+        "Could not save your onboarding. Please check your connection and try again."
+      );
+      setSubmitting(false);
+    }
   }
 
   const wrapperStyle = {
@@ -136,8 +168,24 @@ export default function Onboarding() {
           <LanguageSwitcher lang={lang} setLang={setLang} />
         </div>
 
+        {submitError && (
+          <div style={{
+            padding: "12px 16px",
+            background: "#fef2f2",
+            border: "1px solid var(--danger)",
+            borderRadius: "var(--radius-sm)",
+            color: "var(--danger)",
+            fontSize: "14px",
+            marginBottom: "16px",
+            lineHeight: 1.5,
+          }}>
+            ⚠️ {submitError}
+          </div>
+        )}
         {step === "consent" && <ConsentStep t={t} user={user} onConsent={handleConsent} />}
-        {step === "household" && <HouseholdStep t={t} onPick={handleHousehold} />}
+        {step === "household" && (
+          <HouseholdStep t={t} onPick={handleHousehold} disabled={submitting} />
+        )}
         {step === "family" && (
           <FamilyStep
             t={t}
@@ -147,6 +195,7 @@ export default function Onboarding() {
             setFamilyText={setFamilyText}
             onSubmit={handleFamilySubmit}
             error={familyError}
+            submitting={submitting}
           />
         )}
         {step === "complete" && <CompleteStep t={t} />}
@@ -187,7 +236,7 @@ function ConsentStep({ t, user, onConsent }) {
   );
 }
 
-function HouseholdStep({ t, onPick }) {
+function HouseholdStep({ t, onPick, disabled }) {
   return (
     <div>
       <div style={{ textAlign: "center", marginBottom: "24px" }}>
@@ -199,8 +248,9 @@ function HouseholdStep({ t, onPick }) {
 
       <button
         onClick={() => onPick("solo")}
+        disabled={disabled}
         className="btn btn-outline btn-lg"
-        style={{ width: "100%", marginBottom: "12px", justifyContent: "flex-start", padding: "20px" }}
+        style={{ width: "100%", marginBottom: "12px", justifyContent: "flex-start", padding: "20px", opacity: disabled ? 0.6 : 1 }}
       >
         <span style={{ fontSize: "24px", marginRight: "12px" }}>👤</span>
         <span>{t("onboarding.household_solo")}</span>
@@ -208,8 +258,9 @@ function HouseholdStep({ t, onPick }) {
 
       <button
         onClick={() => onPick("family")}
+        disabled={disabled}
         className="btn btn-outline btn-lg"
-        style={{ width: "100%", justifyContent: "flex-start", padding: "20px" }}
+        style={{ width: "100%", justifyContent: "flex-start", padding: "20px", opacity: disabled ? 0.6 : 1 }}
       >
         <span style={{ fontSize: "24px", marginRight: "12px" }}>👨‍👩‍👧‍👦</span>
         <span>{t("onboarding.household_family")}</span>
@@ -218,7 +269,7 @@ function HouseholdStep({ t, onPick }) {
   );
 }
 
-function FamilyStep({ t, lang, exampleNames, familyText, setFamilyText, onSubmit, error }) {
+function FamilyStep({ t, lang, exampleNames, familyText, setFamilyText, onSubmit, error, submitting }) {
   // Live parse with the same logic as the submit handler
   const parsedNames = familyText
     .split(/[\n,，、&]|\s+and\s+|\s+及\s+|\s*と\s*/i)
@@ -292,10 +343,10 @@ function FamilyStep({ t, lang, exampleNames, familyText, setFamilyText, onSubmit
       <button
         type="submit"
         className="btn btn-brand btn-lg"
-        style={{ width: "100%", opacity: overLimit ? 0.5 : 1 }}
-        disabled={overLimit}
+        style={{ width: "100%", opacity: (overLimit || submitting) ? 0.5 : 1 }}
+        disabled={overLimit || submitting}
       >
-        {t("onboarding.family_continue")}
+        {submitting ? (t("common.loading") || "Saving...") : t("onboarding.family_continue")}
       </button>
     </form>
   );

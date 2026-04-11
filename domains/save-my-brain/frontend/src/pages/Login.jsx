@@ -14,27 +14,33 @@ export default function Login() {
 
   async function handleSubmit(e) {
     e.preventDefault();
+
+    // Require a name — the name becomes the user_id used throughout the app
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      return;
+    }
+
     setLoading(true);
 
-    // Check the server — has someone already been onboarded in this deployment?
+    // Check whether THIS specific user (keyed by their display name) has
+    // already completed onboarding on this deployment. Per-user, not global.
     let onboardingDone = false;
-    let primaryUser = null;
     try {
-      const resp = await fetch(`${API_URL}/api/onboarding_status`);
+      const resp = await fetch(
+        `${API_URL}/api/onboarding_status?user_id=${encodeURIComponent(trimmedName)}`
+      );
       if (resp.ok) {
         const data = await resp.json();
         onboardingDone = !!data.completed;
-        primaryUser = data.primary_user;
       }
     } catch (err) {
       // API unreachable — proceed to onboarding as fallback
       console.warn("onboarding_status check failed:", err);
     }
 
-    // If already onboarded, adopt the primary user and skip onboarding
-    const displayName = primaryUser || name || "User";
-    login(displayName, {
-      name: displayName,
+    login(trimmedName, {
+      name: trimmedName,
       lang,
       onboarding_complete: onboardingDone,
     });
