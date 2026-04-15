@@ -12,6 +12,8 @@ import {
 import LanguageSwitcher from "../components/LanguageSwitcher";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8091";
+const UPLOAD_URL = import.meta.env.VITE_UPLOAD_URL || API_URL;  // browser POSTs directly to tunnel
+const UPLOAD_TOKEN = import.meta.env.VITE_UPLOAD_TOKEN || "";
 
 export default function Dashboard() {
   const { t, lang, setLang } = useTranslation();
@@ -121,21 +123,32 @@ export default function Dashboard() {
     try {
       const form = new FormData();
       form.append("file", file);
+      form.append("filename", file.name);
+      form.append("mime_type", file.type || "application/octet-stream");
       form.append("user_id", user?.name || "web");
 
-      const resp = await fetch(`${API_URL}/api/upload`, {
+      // Auth token goes in X-Upload-Token header — never set Content-Type
+      // manually on multipart (browser sets it with the boundary).
+      const headers = {};
+      if (UPLOAD_TOKEN) headers["X-Upload-Token"] = UPLOAD_TOKEN;
+
+      const resp = await fetch(`${UPLOAD_URL}/upload`, {
         method: "POST",
-        headers: { ...getAuthHeaders() },
+        headers,
         body: form,
       });
-      const data = await resp.json();
-      if (data.success) {
-        setMessages((m) => [...m, { role: "assistant", text: data.reply }]);
+      const data = await resp.json().catch(() => ({}));
+      if (resp.ok && data.status === "queued") {
+        setMessages((m) => [...m, {
+          role: "assistant",
+          text: `📄 "${data.filename}" received — processing in the background.`,
+        }]);
       } else {
-        setMessages((m) => [...m, { role: "assistant", text: "❌ " + (data.error || t("common.error")) }]);
+        const errMsg = data.detail || data.error || `Upload failed (HTTP ${resp.status})`;
+        setMessages((m) => [...m, { role: "assistant", text: `❌ ${errMsg}` }]);
       }
     } catch (e) {
-      setMessages((m) => [...m, { role: "assistant", text: "❌ " + e.message }]);
+      setMessages((m) => [...m, { role: "assistant", text: `❌ ${e.message}` }]);
     } finally {
       setUploading(false);
       loadTab(activeTab);
