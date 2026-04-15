@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "../i18n";
-import { getUser, logout } from "../auth";
+import { getUser, logout, getAuthHeaders } from "../auth";
 import {
   listTasks,
   listExpiryDates,
@@ -11,7 +11,7 @@ import {
 } from "../mcp";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8090";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8091";
 
 export default function Dashboard() {
   const { t, lang, setLang } = useTranslation();
@@ -74,12 +74,15 @@ export default function Dashboard() {
     setSending(true);
 
     try {
-      const resp = await fetch(`${API_URL}/chat`, {
+      const resp = await fetch(`${API_URL}/api/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+        },
         body: JSON.stringify({
           message: text,
-          user_id: user?.name || "web",
+          user_id: user?.telegram_user_id || user?.name || "web",
           first_name: user?.name || "",
         }),
       });
@@ -120,8 +123,9 @@ export default function Dashboard() {
       form.append("file", file);
       form.append("user_id", user?.name || "web");
 
-      const resp = await fetch(`${API_URL}/upload`, {
+      const resp = await fetch(`${API_URL}/api/upload`, {
         method: "POST",
+        headers: { ...getAuthHeaders() },
         body: form,
       });
       const data = await resp.json();

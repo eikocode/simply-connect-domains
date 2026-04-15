@@ -11,10 +11,10 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "../i18n";
-import { getUser, login } from "../auth";
+import { getUser, login, getAuthHeaders } from "../auth";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8090";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8091";
 const MAX_FAMILY_MEMBERS = 7;
 
 export default function Onboarding() {
@@ -124,9 +124,12 @@ export default function Onboarding() {
     };
 
     try {
-      const resp = await fetch(`${API_URL}/onboarding/complete`, {
+      const resp = await fetch(`${API_URL}/api/onboarding_complete`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+        },
         body: JSON.stringify(payload),
       });
       if (!resp.ok) {

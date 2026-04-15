@@ -5,10 +5,6 @@
   "outputDirectory": "dist",
   "routes": [
     {
-      "src": "/mcp/(.*)",
-      "dest": "http://localhost:3004/mcp/$1"
-    },
-    {
       "handle": "filesystem"
     },
     {

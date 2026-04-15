@@ -6,19 +6,24 @@
  * that MCP uses internally.
  *
  * Endpoints:
- *   GET  /health              — health check
- *   GET  /context             — all context files
- *   GET  /context/{category}  — one context file
- *   POST /tool/{name}         — call a tool with JSON args
- *   GET  /tools               — list all tools
+ *   GET  /api/health              — health check (public)
+ *   GET  /api/context             — all context files
+ *   GET  /api/context/{category}  — one context file
+ *   POST /api/tool/{name}         — call a tool with JSON args
+ *   GET  /api/tools               — list all tools
  */
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8090";
+import { getAuthHeaders } from "./auth";
+
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8091";
 
 async function callTool(toolName, args = {}) {
-  const resp = await fetch(`${API_URL}/tool/${toolName}`, {
+  const resp = await fetch(`${API_URL}/api/tool/${toolName}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeaders(),
+    },
     body: JSON.stringify(args),
   });
 
@@ -67,19 +72,21 @@ export const renameFamilyMember = (oldName, newName) =>
 // ---------------------------------------------------------------------------
 
 export async function getContext(category) {
-  const url = category ? `${API_URL}/context/${category}` : `${API_URL}/context`;
-  const resp = await fetch(url);
+  const url = category
+    ? `${API_URL}/api/context/${category}`
+    : `${API_URL}/api/context`;
+  const resp = await fetch(url, { headers: getAuthHeaders() });
   if (!resp.ok) throw new Error(`Context fetch failed: ${resp.status}`);
   return resp.json();
 }
 
 // ---------------------------------------------------------------------------
-// Health check
+// Health check (public — no auth required)
 // ---------------------------------------------------------------------------
 
 export async function checkHealth() {
   try {
-    const resp = await fetch(`${API_URL}/health`);
+    const resp = await fetch(`${API_URL}/api/health`);
     if (!resp.ok) return false;
     const data = await resp.json();
     return data.status === "ok";
