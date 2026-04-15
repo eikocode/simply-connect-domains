@@ -6,17 +6,17 @@
  * that MCP uses internally.
  *
  * Endpoints:
- *   GET  /api/health              — health check
- *   GET  /api/context             — all context files
- *   GET  /api/context/{category}  — one context file
- *   POST /api/tool/{name}         — call a tool with JSON args
- *   GET  /api/tools               — list all tools
+ *   GET  /health              — health check
+ *   GET  /context             — all context files
+ *   GET  /context/{category}  — one context file
+ *   POST /tool/{name}         — call a tool with JSON args
+ *   GET  /tools               — list all tools
  */
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8091";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8090";
 
 async function callTool(toolName, args = {}) {
-  const resp = await fetch(`${API_URL}/api/tool/${toolName}`, {
+  const resp = await fetch(`${API_URL}/tool/${toolName}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(args),
@@ -67,7 +67,7 @@ export const renameFamilyMember = (oldName, newName) =>
 // ---------------------------------------------------------------------------
 
 export async function getContext(category) {
-  const url = category ? `${API_URL}/api/context/${category}` : `${API_URL}/api/context`;
+  const url = category ? `${API_URL}/context/${category}` : `${API_URL}/context`;
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Context fetch failed: ${resp.status}`);
   return resp.json();
@@ -79,7 +79,7 @@ export async function getContext(category) {
 
 export async function checkHealth() {
   try {
-    const resp = await fetch(`${API_URL}/api/health`);
+    const resp = await fetch(`${API_URL}/health`);
     if (!resp.ok) return false;
     const data = await resp.json();
     return data.status === "ok";

@@ -4,7 +4,7 @@ import { useTranslation } from "../i18n";
 import { login } from "../auth";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8091";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8090";
 
 export default function Login() {
   const { t, lang, setLang } = useTranslation();
@@ -28,7 +28,7 @@ export default function Login() {
     let onboardingDone = false;
     try {
       const resp = await fetch(
-        `${API_URL}/api/onboarding_status?user_id=${encodeURIComponent(trimmedName)}`
+        `${API_URL}/onboarding/status?user_id=${encodeURIComponent(trimmedName)}`
       );
       if (resp.ok) {
         const data = await resp.json();

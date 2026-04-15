@@ -722,6 +722,18 @@ def maybe_handle_document(
 
     doc_type = extraction.get("doc_type", "other")
 
+    # Step 3.5: Semantic duplicate check (e.g. re-photographed receipt)
+    # Byte-hash dup is already caught above; this catches a different shot of
+    # the same real-world document by matching (merchant, date, amount) or
+    # (insurer, policy_number) or (doctor, date).
+    try:
+        sem_dup = db.find_semantic_duplicate(cm, doc_type, extraction)
+    except Exception as e:
+        log.warning(f"Semantic dup check failed (non-fatal): {e}")
+        sem_dup = None
+    if sem_dup:
+        return _semantic_dup_reply(lang, sem_dup["kind"], sem_dup["match"], extraction)
+
     # Step 4: Auto-tag family member from detected names
     family_member_id = None
     detected_names = extraction.get("detected_names", [])
@@ -940,6 +952,70 @@ def _dup_reply(lang: str, existing_doc_type: str, uploaded_at: str, summary: str
         existing_doc_type, existing_doc_type
     )
     return tpl.replace("{type}", type_label).replace("{when}", when).replace("{preview}", preview)
+
+
+def _semantic_dup_reply(lang: str, kind: str, match: dict, extraction: dict) -> str:
+    """
+    Soft warning when a semantic duplicate is detected (same real-world document,
+    different bytes — e.g. re-photographed receipt).
+
+    We do NOT insert into the database. User can reupload with a clarification
+    caption if they want to force a new entry (future: explicit "force" tool).
+    """
+    when = (match.get("uploaded_at") or "").split(" ")[0] or "earlier"
+    existing_file = match.get("filename") or "previous upload"
+
+    # Build a 1-line "details" string describing the match
+    if kind == "transaction":
+        merchant = match.get("merchant") or ""
+        date = match.get("date") or ""
+        amount = match.get("amount") or 0
+        currency = match.get("currency") or "HKD"
+        details = f"{merchant} · {date} · {currency} {float(amount):,.2f}"
+    elif kind == "policy":
+        insurer = match.get("insurer") or ""
+        pnum = match.get("policy_number") or ""
+        details = f"{insurer} · policy #{pnum}"
+    elif kind == "medical":
+        doctor = match.get("doctor") or match.get("provider") or ""
+        date = match.get("date") or ""
+        details = f"{doctor} · {date}"
+    else:
+        details = ""
+
+    templates = {
+        "en": (
+            "♻️ *Looks like a duplicate*\n\n"
+            "I already have a record that matches this one:\n"
+            "• {details}\n"
+            "• From: {file} (uploaded {when})\n\n"
+            "I've *not* added it again. If this is actually a *different* "
+            "document, just re-send with a short caption explaining (e.g. "
+            "\"different visit\") and I'll save it as new."
+        ),
+        "zh-tw": (
+            "♻️ *看起來是重複文件*\n\n"
+            "我已經有一筆符合的記錄：\n"
+            "• {details}\n"
+            "• 來自：{file}（{when} 上傳）\n\n"
+            "我*沒有*再次儲存。如果這其實是*不同*的文件，"
+            "請重新上傳並加上簡短說明（例如「不同次看診」），我就會儲存為新記錄。"
+        ),
+        "ja": (
+            "♻️ *重複の可能性*\n\n"
+            "すでに一致する記録があります：\n"
+            "• {details}\n"
+            "• ファイル：{file}（{when}）\n\n"
+            "重複のため登録しませんでした。*別の*書類であれば、"
+            "短いキャプション（例：「別の診察」）を付けて再送してください。"
+        ),
+    }
+    tpl = templates.get(lang, templates["en"])
+    return (
+        tpl.replace("{details}", details)
+           .replace("{file}", existing_file)
+           .replace("{when}", when)
+    )
 
 
 def _error_reply(lang: str, detail: str) -> str:

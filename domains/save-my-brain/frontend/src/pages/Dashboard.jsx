@@ -11,7 +11,7 @@ import {
 } from "../mcp";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8091";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8090";
 
 export default function Dashboard() {
   const { t, lang, setLang } = useTranslation();
@@ -74,7 +74,7 @@ export default function Dashboard() {
     setSending(true);
 
     try {
-      const resp = await fetch(`${API_URL}/api/chat`, {
+      const resp = await fetch(`${API_URL}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -120,7 +120,7 @@ export default function Dashboard() {
       form.append("file", file);
       form.append("user_id", user?.name || "web");
 
-      const resp = await fetch(`${API_URL}/api/upload`, {
+      const resp = await fetch(`${API_URL}/upload`, {
         method: "POST",
         body: form,
       });

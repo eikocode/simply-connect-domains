@@ -309,3 +309,176 @@ def find_family_member_id(cm, name: str) -> int | None:
         return row["id"] if row else None
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Semantic duplicate detection
+# ---------------------------------------------------------------------------
+
+def _norm_merchant(m: str | None) -> str:
+    """Normalize merchant name for comparison."""
+    if not m:
+        return ""
+    # Lowercase, collapse whitespace, remove punctuation
+    import re
+    return re.sub(r"[^\w\s]", "", m.lower()).strip()
+
+
+def find_semantic_duplicate_transaction(
+    cm,
+    merchant: str | None,
+    date_str: str | None,
+    amount: float | None,
+    amount_tolerance: float = 0.5,
+) -> dict | None:
+    """
+    Look for an existing transaction with matching (merchant, date, amount).
+
+    Uses normalized merchant name (lowercase, no punctuation) and exact date.
+    Amount has a small tolerance (default 0.5) to handle rounding.
+
+    Returns the matching transaction row as a dict, or None.
+    """
+    if not merchant or not date_str or amount is None:
+        return None
+
+    norm_merch = _norm_merchant(merchant)
+    if not norm_merch:
+        return None
+
+    conn = get_connection(cm)
+    try:
+        rows = conn.execute(
+            """SELECT t.id, t.date, t.amount, t.merchant, t.category, t.currency,
+                      t.document_id, d.filename, d.doc_type, d.uploaded_at
+               FROM smb_transactions t
+               LEFT JOIN smb_documents d ON d.id = t.document_id
+               WHERE t.date = ?
+                 AND ABS(t.amount - ?) < ?""",
+            (date_str, abs(float(amount)), amount_tolerance),
+        ).fetchall()
+
+        for row in rows:
+            existing_norm = _norm_merchant(row["merchant"])
+            # Exact normalized match, or one contains the other
+            if existing_norm == norm_merch:
+                return dict(row)
+            if existing_norm and norm_merch and (
+                existing_norm in norm_merch or norm_merch in existing_norm
+            ):
+                return dict(row)
+
+        return None
+    finally:
+        conn.close()
+
+
+def find_semantic_duplicate_policy(
+    cm,
+    insurer: str | None,
+    policy_number: str | None,
+) -> dict | None:
+    """Match insurance policy by (insurer, policy_number)."""
+    if not policy_number:
+        return None
+    conn = get_connection(cm)
+    try:
+        rows = conn.execute(
+            """SELECT p.id, p.insurer, p.policy_number, p.policy_type,
+                      p.document_id, d.filename, d.uploaded_at
+               FROM smb_policies p
+               LEFT JOIN smb_documents d ON d.id = p.document_id
+               WHERE p.policy_number = ?""",
+            (policy_number,),
+        ).fetchall()
+        for row in rows:
+            # If insurer also matches (case-insensitive), it's definitely a dup
+            if not insurer or (row["insurer"] or "").lower() == insurer.lower():
+                return dict(row)
+        return None
+    finally:
+        conn.close()
+
+
+def find_semantic_duplicate_medical(
+    cm,
+    doctor: str | None,
+    date_str: str | None,
+    provider: str | None = None,
+) -> dict | None:
+    """Match medical record by (doctor, date) or (provider, date)."""
+    if not date_str:
+        return None
+    if not doctor and not provider:
+        return None
+    conn = get_connection(cm)
+    try:
+        rows = conn.execute(
+            """SELECT m.id, m.doctor, m.provider, m.date,
+                      m.document_id, d.filename, d.uploaded_at
+               FROM smb_medical_records m
+               LEFT JOIN smb_documents d ON d.id = m.document_id
+               WHERE m.date = ?""",
+            (date_str,),
+        ).fetchall()
+        for row in rows:
+            row_doctor = (row["doctor"] or "").lower()
+            row_provider = (row["provider"] or "").lower()
+            if doctor and row_doctor == doctor.lower():
+                return dict(row)
+            if provider and row_provider == provider.lower():
+                return dict(row)
+        return None
+    finally:
+        conn.close()
+
+
+def find_semantic_duplicate(cm, doc_type: str, extraction: dict) -> dict | None:
+    """
+    Dispatcher: look for a semantic duplicate based on doc_type + extracted fields.
+
+    Returns a dict with:
+      {
+        "kind": "transaction" | "policy" | "medical",
+        "match": {...existing row...},
+      }
+    ...or None if no duplicate is found.
+    """
+    # Transactions (receipts, bank statements, credit cards, utility bills)
+    if doc_type in ("receipt", "bank_statement", "credit_card", "utility"):
+        txns = extraction.get("transactions") or []
+        if txns:
+            t = txns[0]
+            match = find_semantic_duplicate_transaction(
+                cm,
+                merchant=t.get("merchant"),
+                date_str=t.get("date"),
+                amount=t.get("amount"),
+            )
+            if match:
+                return {"kind": "transaction", "match": match}
+
+    # Insurance policies
+    if doc_type == "insurance":
+        policy = extraction.get("policy") or {}
+        match = find_semantic_duplicate_policy(
+            cm,
+            insurer=policy.get("insurer"),
+            policy_number=policy.get("policy_number"),
+        )
+        if match:
+            return {"kind": "policy", "match": match}
+
+    # Medical records
+    if doc_type == "medical":
+        med = extraction.get("medical_record") or {}
+        match = find_semantic_duplicate_medical(
+            cm,
+            doctor=med.get("doctor"),
+            date_str=med.get("date"),
+            provider=med.get("provider"),
+        )
+        if match:
+            return {"kind": "medical", "match": match}
+
+    return None
