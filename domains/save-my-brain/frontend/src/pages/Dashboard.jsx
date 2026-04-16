@@ -11,7 +11,7 @@ import {
 } from "../mcp";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8091";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8090";
 const UPLOAD_URL = import.meta.env.VITE_UPLOAD_URL || API_URL;  // browser POSTs directly to tunnel
 const UPLOAD_TOKEN = import.meta.env.VITE_UPLOAD_TOKEN || "";
 

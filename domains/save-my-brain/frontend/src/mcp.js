@@ -2,7 +2,7 @@
  * Web API Client — talks to the save-my-brain web API.
  *
  * Simple REST wrapper around the extension tools (not full MCP protocol).
- * The web API runs on port 8091 and wraps the same dispatch() function
+ * The web API runs on port 8090 and wraps the same dispatch() function
  * that MCP uses internally.
  *
  * Endpoints:
@@ -15,7 +15,7 @@
 
 import { getAuthHeaders } from "./auth";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8091";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8090";
 
 async function callTool(toolName, args = {}) {
   const resp = await fetch(`${API_URL}/api/tool/${toolName}`, {

@@ -4,7 +4,7 @@ import { useTranslation } from "../i18n";
 import { login } from "../auth";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8091";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8090";
 const POLL_INTERVAL_MS = 2000;
 const CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 

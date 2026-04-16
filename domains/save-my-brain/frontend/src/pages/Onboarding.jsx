@@ -14,7 +14,7 @@ import { useTranslation } from "../i18n";
 import { getUser, login, getAuthHeaders } from "../auth";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8091";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8090";
 const MAX_FAMILY_MEMBERS = 7;
 
 export default function Onboarding() {
